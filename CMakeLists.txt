@@ -28,7 +28,9 @@ if((NOT Sel4testAllowSettingsOverride) AND (KernelArchARM OR KernelArchRiscV))
 endif()
 elfloader_import_project()
 
-add_subdirectory(apps/sel4test-driver)
+# add_subdirectory(apps/sel4test-driver)
+
+add_subdirectory(apps/aepbench)
 
 include(simulation)
 if(KernelSel4ArchX86_64)

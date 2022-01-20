@@ -1,0 +1,31 @@
+menuconfig APP_AEPBENCH
+    bool "AEPBench"
+    default y
+    depends on LIB_SEL4 && (LIB_MUSL_C || LIB_SEL4_C) && LIB_SEL4_PLAT_SUPPORT && LIB_SEL4_VKA && LIB_SEL4_ALLOCMAN && LIB_SEL4_VSPACE && LIB_SEL4_UTILS && LIB_SEL4_SIMPLE && LIB_SEL4_SIMPLE_DEFAULT && LIB_PLATSUPPORT && LIB_SEL4_BENCH && LIB_CPIO && LIB_UTILS
+    help
+        Benchmarks AEP ping pong throughput and seL4_Notify raw syscall cost
+
+choice
+    prompt "Specify AEP Benchmark"
+    depends on APP_AEPBENCH
+    default ALL_AEP_BENCHES
+    help
+        Selects the AEP benchmarks to perform
+
+    config ALL_AEP_BENCHES
+        bool "All"
+
+    config PINGPONG_ONLY
+        bool "Only pingpong benchmark"
+
+    config SYSCALL_ONLY
+        bool "Only Notify syscall cost"
+endchoice
+
+config RTM_PMC
+    bool "RTM performance counters"
+    depends on APP_AEPBENCH && RTM_LOCK
+    default n
+    help
+        Enables tracking of RTM performance counters during the ping pong benchmark.
+

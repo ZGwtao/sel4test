@@ -1,0 +1,118 @@
+/* Author: Sean Peters */
+/* Date: 1 May 2014 */
+
+#include <autoconf.h>
+
+/* C includes */
+#include <stdio.h>
+#include <stdlib.h>
+
+/* seL4 libraries */
+#include <sel4platsupport/platsupport.h>
+#include <sel4platsupport/io.h>
+#include <sel4/sel4.h>
+#include <vka/vka.h>
+#include <allocman/bootstrap.h>
+#include <allocman/allocman.h>
+#include <allocman/vka.h>
+#include <sel4utils/vspace.h>
+#include <sel4utils/stack.h>
+#include <simple-default/simple-default.h>
+// #include <syscall_stubs_sel4.h>
+#include <sel4bench/sel4bench.h>
+#include <sel4platsupport/timer.h>
+#include <sel4platsupport/platsupport.h>
+#include <platsupport/timer.h>
+
+/* AEPBench includes */
+#include "utils.h"
+#include "notifycost.h"
+#include "pingpong.h"
+
+// MUSLC_SYSCALL_TABLE;
+
+#define __SWINUM(x) ((x) & 0x00ffffff)
+#define MEM_POOL_SIZE (1 * 1024 * 1024 * 64)
+// #define BRK_VIRTUAL_SIZE (1 * 1024 * 1024 * 64)
+
+static char initial_mem_pool[1024 * 64]; // MEM_POOL_SIZE was too big!! kernel was failing to boot
+void *__attribute__((used))async_ipc_buffer;
+uint64_t *current_time = NULL;
+vspace_t *muslc_this_vspace = NULL;
+reservation_t * __attribute__((used)) muslc_brk_reservation = NULL;
+void * __attribute__((used)) muslc_brk_reservation_start = NULL;
+char _cpio_archive[1];
+
+env_t env_global;
+vspace_t vspace_global;
+simple_t simple_global;
+sel4utils_alloc_data_t global_alloc_data;
+
+void 
+bootstrap(env_t* env)
+{
+    allocman_t* allocman;
+    int err;
+
+    /* first create an allocman */
+    // env->bootinfo = seL4_GetBootInfo();
+    // replaced by
+    env->bootinfo = platsupport_get_bootinfo();
+    allocman = bootstrap_use_bootinfo(env->bootinfo, sizeof(initial_mem_pool), initial_mem_pool);
+    assert(allocman);
+
+    /* create a vka out of the allocman */
+    env->vka = allocman_mspace_alloc(allocman, sizeof(*env->vka), &err);
+    assert(!err);
+    allocman_make_vka(env->vka, allocman);
+
+    /* now we can initialize a vspace using allocman */
+    err = sel4utils_bootstrap_vspace_with_bootinfo_leaky(env->vspace, &global_alloc_data, 
+            seL4_CapInitThreadPD, env->vka, env->bootinfo);
+    assert(!err);
+
+    /* Setup printf */
+    simple_default_init_bootinfo(env->simple, env->bootinfo);
+    platsupport_serial_setup_simple(env->vspace, env->simple, env->vka);
+
+    err = sel4platsupport_new_io_ops(env->vspace, env->vka, env->simple, &env->ops);
+
+    assert(!err);
+}
+
+void *
+main_continued(void *arg)
+{
+#ifndef CONFIG_PINGPONG_ONLY
+    //syscall_cost(&env_global);
+    printf("==================================================================================\n");
+#endif
+
+#ifndef CONFIG_SYSCALL_ONLY
+    /* This technically should never return */
+    pingpong_benchmark(&env_global);
+#endif
+
+    /* We are done */
+    seL4_TCB_Suspend(seL4_CapInitThreadTCB);
+    return 0;
+}
+
+int 
+main(void) 
+{
+    // SET_MUSLC_SYSCALL_TABLE;
+    // replaced by nothing
+
+    // inserted
+    sel4bench_init();
+
+    env_global.vspace = &vspace_global;
+    env_global.simple = &simple_global;
+
+    /* bootstrap into environment */
+    bootstrap(&env_global);
+    aepprintf("Bootstrapped into environment.\n");
+
+    sel4utils_run_on_stack(env_global.vspace, main_continued, NULL, NULL);
+}

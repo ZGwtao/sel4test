@@ -1,0 +1,5 @@
+apps-$(CONFIG_APP_MPTEST)        += mptest
+
+mptest-y                          = common libsel4 libmuslc libsel4vka libsel4allocman \
+                                      libsel4platsupport libsel4muslcsys libsel4vspace libsel4utils
+mptest: kernel_elf $(mptest-y)

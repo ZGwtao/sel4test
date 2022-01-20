@@ -1,3 +1,26 @@
+
+
+# target_link_libraries(
+#     aepbench
+#     PUBLIC
+#         # sel4_autoconf
+#         muslc
+#         # sel4
+#         # sel4runtime
+#         sel4allocman
+#         sel4vka
+#         sel4utils
+#         # sel4rpc
+#         # sel4test
+#         # sel4sync
+#         sel4muslcsys
+#         # sel4testsupport
+#         # sel4serialserver_tests
+#         sel4platsupport
+#         sel4vspace
+#         sel4bench
+#     # PRIVATE sel4test-driver_Config
+# )
 #
 # Copyright 2017, Data61, CSIRO (ABN 41 687 119 230)
 #
@@ -6,7 +29,7 @@
 
 cmake_minimum_required(VERSION 3.7.2)
 
-project(sel4test-driver C)
+project(aepbench C)
 
 set(configure_string "")
 
@@ -26,7 +49,7 @@ if(Sel4testAllowSettingsOverride)
 else()
     mark_as_advanced(FORCE Sel4testHaveTimer Sel4testHaveCache)
 endif()
-add_config_library(sel4test-driver "${configure_string}")
+add_config_library(aepbench "${configure_string}")
 
 find_package(musllibc REQUIRED)
 find_package(util_libs REQUIRED)
@@ -48,26 +71,9 @@ set(LibNanopb ON CACHE BOOL "" FORCE)
 sel4_projects_libs_import_libraries()
 add_subdirectory(../../libsel4testsupport libsel4testsupport)
 
-file(
-    GLOB
-        static
-        src/*.c
-        src/tests/*.c
-        src/arch/${KernelArch}/*.c
-        src/plat/${KernelPlatform}/*.c
-        src/arch/${KernelArch}/*.S
-        src/plat/${KernelPlatform}/*.S
-)
-
-# Import build rules for test app
-add_subdirectory(../sel4test-tests sel4test-tests)
-include(cpio)
-MakeCPIO(archive.o "$<TARGET_FILE:sel4test-tests>")
-
-add_executable(sel4test-driver EXCLUDE_FROM_ALL ${static} archive.o)
-target_include_directories(sel4test-driver PRIVATE "include")
+add_executable(aepbench EXCLUDE_FROM_ALL src/main.c src/notifycost.c src/pingpong.c src/timer.c src/utils.c)
 target_link_libraries(
-    sel4test-driver
+    aepbench
     PUBLIC
         sel4_autoconf
         muslc
@@ -81,6 +87,11 @@ target_link_libraries(
         sel4platsupport
         sel4muslcsys
         sel4testsupport
-    PRIVATE sel4test-driver_Config
+        sel4bench
+    PRIVATE aepbench_Config
 )
-target_compile_options(sel4test-driver PRIVATE -Werror -g)
+target_compile_options(aepbench PRIVATE -Werror -g)
+
+# Set this image as the rootserver
+include(rootserver)
+DeclareRootserver(aepbench)
