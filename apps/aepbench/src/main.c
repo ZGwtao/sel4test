@@ -18,7 +18,6 @@
 #include <sel4utils/vspace.h>
 #include <sel4utils/stack.h>
 #include <simple-default/simple-default.h>
-// #include <syscall_stubs_sel4.h>
 #include <sel4bench/sel4bench.h>
 #include <sel4platsupport/timer.h>
 #include <sel4platsupport/platsupport.h>
@@ -29,19 +28,9 @@
 #include "notifycost.h"
 #include "pingpong.h"
 
-// MUSLC_SYSCALL_TABLE;
+#define MEM_POOL_SIZE (1 * 1024 * 256 * 64)
 
-#define __SWINUM(x) ((x) & 0x00ffffff)
-#define MEM_POOL_SIZE (1 * 1024 * 1024 * 64)
-// #define BRK_VIRTUAL_SIZE (1 * 1024 * 1024 * 64)
-
-static char initial_mem_pool[1024 * 64]; // MEM_POOL_SIZE was too big!! kernel was failing to boot
-void *__attribute__((used))async_ipc_buffer;
-uint64_t *current_time = NULL;
-vspace_t *muslc_this_vspace = NULL;
-reservation_t * __attribute__((used)) muslc_brk_reservation = NULL;
-void * __attribute__((used)) muslc_brk_reservation_start = NULL;
-char _cpio_archive[1];
+static char initial_mem_pool[MEM_POOL_SIZE];
 
 env_t env_global;
 vspace_t vspace_global;
@@ -55,8 +44,6 @@ bootstrap(env_t* env)
     int err;
 
     /* first create an allocman */
-    // env->bootinfo = seL4_GetBootInfo();
-    // replaced by
     env->bootinfo = platsupport_get_bootinfo();
     allocman = bootstrap_use_bootinfo(env->bootinfo, sizeof(initial_mem_pool), initial_mem_pool);
     assert(allocman);
@@ -73,10 +60,10 @@ bootstrap(env_t* env)
 
     /* Setup printf */
     simple_default_init_bootinfo(env->simple, env->bootinfo);
-    platsupport_serial_setup_simple(env->vspace, env->simple, env->vka);
+    err = platsupport_serial_setup_simple(env->vspace, env->simple, env->vka);
+    assert(!err);
 
     err = sel4platsupport_new_io_ops(env->vspace, env->vka, env->simple, &env->ops);
-
     assert(!err);
 }
 
@@ -84,7 +71,7 @@ void *
 main_continued(void *arg)
 {
 #ifndef CONFIG_PINGPONG_ONLY
-    //syscall_cost(&env_global);
+    syscall_cost(&env_global);
     printf("==================================================================================\n");
 #endif
 
@@ -101,10 +88,6 @@ main_continued(void *arg)
 int 
 main(void) 
 {
-    // SET_MUSLC_SYSCALL_TABLE;
-    // replaced by nothing
-
-    // inserted
     sel4bench_init();
 
     env_global.vspace = &vspace_global;

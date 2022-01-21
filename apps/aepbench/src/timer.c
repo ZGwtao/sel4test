@@ -65,7 +65,6 @@ void wait_for_timer_interrupt(env_t *env)
     seL4_Word sender_badge;
     seL4_Wait(env->timer_notification.cptr, &sender_badge);
     if (sender_badge) {
-        printf("Handling timer interrupgs\n");
         handle_timer_interrupts(env, sender_badge);
     }
 }

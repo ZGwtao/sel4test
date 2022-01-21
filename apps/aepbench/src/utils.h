@@ -71,8 +71,6 @@ typedef struct thread_config {
     seL4_Word arg1;
     seL4_Word arg2;
     seL4_Word arg3;
-    ltimer_t *ltimer;
-    time_manager_t *tm;
 } thread_config_t;
 
 float 
