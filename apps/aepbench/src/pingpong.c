@@ -31,8 +31,13 @@ typedef struct ipc_count {
     uint64_t padding[7];
 } ipc_count_t;
 
+typedef struct ipc_counts {
+    ipc_count_t ipc_counts[NUM_THREADS];
+} ipc_counts_t;
 
-ipc_count_t ipc_counts[NUM_THREADS];
+ipc_counts_t *ipc_counts;
+
+// ipc_count_t ipc_counts[NUM_THREADS];
 
 static inline void set_ipc_buffer(thread_config_t *config) {
     seL4_SetUserData((seL4_Word)config->ipc_buf);
@@ -44,7 +49,7 @@ ping_thread_fn(thread_config_t *thread_config, void *unused)
     set_ipc_buffer(thread_config);
     while(1) {
         seL4_Call(thread_config->arg1, seL4_MessageInfo_new(0, 0, 0, 0));
-        ipc_counts[thread_config->arg2].calls_complete++;
+        ipc_counts->ipc_counts[thread_config->arg2].calls_complete++;
     }
 }
 
@@ -65,7 +70,7 @@ pong_thread_fn(thread_config_t *thread_config, void *unused)
 #else
         seL4_ReplyRecv(thread_config->arg1, seL4_MessageInfo_new(0, 0, 0, 0), NULL);
 #endif
-        ipc_counts[thread_config->arg2].calls_complete++;
+        ipc_counts->ipc_counts[thread_config->arg2].calls_complete++;
     }
 }
 
@@ -94,7 +99,7 @@ interrupt_thread(thread_config_t *thread_config, void *unused)
 
         /* start */
         for (int i = 0; i < NUM_THREADS; i++) {
-            results[i] = ipc_counts[i].calls_complete;
+            results[i] = ipc_counts->ipc_counts[i].calls_complete;
         }
 
         wait_for_timer_interrupt(env);
@@ -102,7 +107,7 @@ interrupt_thread(thread_config_t *thread_config, void *unused)
 
         /* end */
         for (int i = 0; i < NUM_THREADS; i++) {
-            results2[i] = ipc_counts[i].calls_complete;
+            results2[i] = ipc_counts->ipc_counts[i].calls_complete;
         }
 
         /* tally */
@@ -290,6 +295,10 @@ pingpong_benchmark(env_t* env)
     sel4utils_thread_t ping_threads[NUM_THREADS];
     sel4utils_thread_t pong_threads[NUM_THREADS];
     int i;
+
+    uint64_t ipc_counts_addr = (uint64_t)malloc((sizeof *ipc_counts) + 64);
+    ipc_counts_addr = (ipc_counts_addr & ~0xF) + 0x10;
+    ipc_counts = (ipc_counts_t *)ipc_counts_addr;
     
     aepprintf("Measuring AEP ping pong throughput\n");
 
