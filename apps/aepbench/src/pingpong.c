@@ -43,6 +43,15 @@ static inline void set_ipc_buffer(thread_config_t *config) {
     seL4_SetUserData((seL4_Word)config->ipc_buf);
 }
 
+static inline void do_work() {
+#if WORK_UNITS >= 0
+    int i;
+    for (i = 0; i < 1 << WORK_UNITS; i++) {
+        asm volatile("nop");
+    }
+#endif
+}
+
 void 
 ping_thread_fn(thread_config_t *thread_config, void *unused) 
 {
@@ -71,6 +80,7 @@ pong_thread_fn(thread_config_t *thread_config, void *unused)
         seL4_ReplyRecv(thread_config->arg1, seL4_MessageInfo_new(0, 0, 0, 0), NULL);
 #endif
         ipc_counts->ipc_counts[thread_config->arg2].calls_complete++;
+        do_work();
     }
 }
 
