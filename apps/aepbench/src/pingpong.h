@@ -2,8 +2,6 @@
 /* Date: 24 May 2014 */
 /* A ping pong benchmark for async ipc. Used to benchmark fastpath AEP IPC */
 
-#pragma once
-
 #ifndef PINGPONG_H
 #define PINGPONG_H
 

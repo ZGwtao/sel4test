@@ -28,8 +28,9 @@
 typedef struct ipc_count {
     volatile uint64_t calls_complete;
     // padd so we don't share cache lines
-    seL4_Word padding[7];
+    uint64_t padding[7];
 } ipc_count_t;
+
 
 ipc_count_t ipc_counts[NUM_THREADS];
 
@@ -40,20 +41,31 @@ static inline void set_ipc_buffer(thread_config_t *config) {
 void 
 ping_thread_fn(thread_config_t *thread_config, void *unused) 
 {
-    volatile uint64_t *counter = &ipc_counts[thread_config->arg2].calls_complete;
+    set_ipc_buffer(thread_config);
     while(1) {
-        seL4_Signal(thread_config->arg1);
-        seL4_Wait(thread_config->arg3, NULL);
-        (*counter)++;
+        seL4_Call(thread_config->arg1, seL4_MessageInfo_new(0, 0, 0, 0));
+        ipc_counts[thread_config->arg2].calls_complete++;
     }
 }
 
 void
 pong_thread_fn(thread_config_t *thread_config, void *unused)
 {
+    set_ipc_buffer(thread_config);
+
+#ifdef CONFIG_KERNEL_MCS
+    seL4_Recv(thread_config->arg1, NULL, thread_config->arg3);
+#else
+    seL4_Wait(thread_config->arg1, NULL);
+#endif
+
     while(1) {
-        seL4_Wait(thread_config->arg3, NULL);
-        seL4_Signal(thread_config->arg1);
+#ifdef CONFIG_KERNEL_MCS
+        seL4_ReplyRecv(thread_config->arg1, seL4_MessageInfo_new(0, 0, 0, 0), NULL, thread_config->arg3);
+#else
+        seL4_ReplyRecv(thread_config->arg1, seL4_MessageInfo_new(0, 0, 0, 0), NULL);
+#endif
+        ipc_counts[thread_config->arg2].calls_complete++;
     }
 }
 
@@ -143,40 +155,39 @@ start_pingpong_pair(env_t *env, int thread_pair_id, sel4utils_thread_t* ping_thr
     pong_config->ipc_buf = (void*)pong_thread->ipc_buffer_addr;
 
     /* allocate ping and pong async endpoitns */
-    err = vka_alloc_notification(env->vka, &ping_aep);
-    assert(!err);
-    err = vka_alloc_notification(env->vka, &pong_aep);
+    err = vka_alloc_endpoint(env->vka, &ping_aep);
     assert(!err);
 
     /* Assign AEP to notify */
     ping_config->arg1 = ping_aep.cptr;
-    pong_config->arg1 = pong_aep.cptr;
+    pong_config->arg1 = ping_aep.cptr;
     /* Assign thread pair ID, which duals as CPU affinity index */
     ping_config->arg2 = thread_pair_id;
     pong_config->arg2 = thread_pair_id;
-    /* Assign AEP to wait on */
-    ping_config->arg3 = pong_aep.cptr;
-    pong_config->arg3 = ping_aep.cptr;
+#ifdef CONFIG_KERNEL_MCS
+    vka_object_t reply;
+    err = vka_alloc_reply(env->vka, &reply);
+    assert(!err);
+    pong_config->arg3 = reply.cptr;
+#endif
 
     /* Start threads */
     err = sel4utils_start_thread(ping_thread, (void*)ping_thread_fn, ping_config, NULL, 0); assert(!err);
     err = sel4utils_start_thread(pong_thread, (void*)pong_thread_fn, pong_config, NULL, 0); assert(!err);
 
+#if CONFIG_MAX_NUM_NODES > 1
 #ifdef CONFIG_KERNEL_MCS
     seL4_Time timeslice = CONFIG_BOOT_THREAD_TIME_SLICE * US_IN_S;
     seL4_CPtr sched_control = simple_get_sched_ctrl(env->simple, thread_pair_id);
     assert(sched_control != seL4_CapNull);
-    err = seL4_SchedControl_Configure(sched_control,
-                                            ping_thread->sched_context.cptr,
-                                            timeslice, timeslice, 0, 0);
+    err = seL4_SchedControl_Configure(sched_control, ping_thread->sched_context.cptr, timeslice, timeslice, 0, 0);
     assert(!err);
-    err = seL4_SchedControl_Configure(sched_control,
-                                            pong_thread->sched_context.cptr,
-                                            timeslice, timeslice, 0, 0);
+    err = seL4_SchedControl_Configure(sched_control, pong_thread->sched_context.cptr, timeslice, timeslice, 0, 0);
     assert(!err);
 #else
     err = seL4_TCB_SetAffinity(ping_thread->tcb.cptr, thread_pair_id); assert(!err);
     err = seL4_TCB_SetAffinity(pong_thread->tcb.cptr, thread_pair_id); assert(!err);
+#endif
 #endif
 
     seL4_TCB_Resume(ping_thread->tcb.cptr);
@@ -294,15 +305,7 @@ pingpong_benchmark(env_t* env)
         start_pingpong_pair (env, i, &ping_threads[i], &pong_threads[i]);
     }
 
-    printf("started all the pingpong threads\n");
-
-#ifdef CONFIG_RTM_PMC
-    start_rtm_performance_counters();
-#endif
-
     /* Start interrupt thread */
     D("Start interrupt thread.\n");
     start_interrupt_thread(env, &int_thread);
-
-    printf("started the interrupt thread\n");
 }
