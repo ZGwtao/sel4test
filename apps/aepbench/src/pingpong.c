@@ -84,10 +84,13 @@ interrupt_thread(thread_config_t *thread_config, void *unused)
         uint32_t results2[NUM_THREADS];
         uint32_t total = 0;
 
+        uint32_t cycles0, cycles1;
+
         /* warmup */
         for (int i = 0; i < WARMUPS; i++ ) {
             wait_for_timer_interrupt(env);
         }
+        cycles0 = sel4bench_get_cycle_count();
 
         /* start */
         for (int i = 0; i < NUM_THREADS; i++) {
@@ -95,6 +98,7 @@ interrupt_thread(thread_config_t *thread_config, void *unused)
         }
 
         wait_for_timer_interrupt(env);
+        cycles1 = sel4bench_get_cycle_count();
 
         /* end */
         for (int i = 0; i < NUM_THREADS; i++) {
@@ -109,6 +113,7 @@ interrupt_thread(thread_config_t *thread_config, void *unused)
             total += diff;
         }
         printf("Total:%d\n", total);
+        printf("Cycles: %d\n", cycles1 - cycles0);
     }
 
     aepprintf("All is well in the universe\n");
