@@ -264,14 +264,7 @@ start_interrupt_thread(env_t* env, sel4utils_thread_t* int_thread)
     err = ltimer_default_init(&env->ltimer, env->ops, NULL, NULL);
     ZF_LOGF_IF(err, "Failed to setup the timers");
     assert(!err);
-
-    err = vka_alloc_notification(env->vka, &env->timer_notify_test);
-    ZF_LOGF_IF(err, "Failed to allocate notification object for tests");
-    assert(!err);
     
-    /* set up the timer manager */
-    err = tm_init(&env->tm, &env->ltimer, &env->ops, 1);
-    assert(!err);
     /* Restore the IRQ interface's register function */
     env->ops.irq_ops.irq_register_fn = irq_register_fn_copy;
     env->ops.irq_ops.cookie = cookie_copy;

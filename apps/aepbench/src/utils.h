@@ -40,20 +40,12 @@ typedef struct env {
     simple_t* simple;
     ps_io_ops_t ops;
     ltimer_t ltimer;
-    time_manager_t tm;
 
     /* The main timer notification that sel4-driver receives ltimer IRQ on */
     vka_object_t timer_notification;
 
     /* The badged notifications that are paired with the timer IRQ handlers */
     cspacepath_t badged_timer_notifications[MAX_TIMER_IRQS];
-
-
-    /* A notification used by sel4-driver to signal sel4test-tests that there
-     * is a timer interrupt. The timer_notify_test is copied to new tests
-     * before actually starting them.
-     */
-    vka_object_t timer_notify_test;
 
     /* Only needed if we're on RT kernel */
     vka_object_t reply;

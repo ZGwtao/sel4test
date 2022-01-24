@@ -14,20 +14,6 @@ struct sel4test_ack_data {
 };
 typedef struct sel4test_ack_data sel4test_ack_data_t;
 
-/* A pending timeout requests from tests */
-static bool timeServer_timeoutPending = false;
-static timeout_type_t timeServer_timeoutType;
-
-static int timeout_cb(uintptr_t token)
-{
-    seL4_Signal((seL4_CPtr) token);
-
-    if (timeServer_timeoutType != TIMEOUT_PERIODIC) {
-        timeServer_timeoutPending = false;
-    }
-    return 0;
-}
-
 static int ack_timer_interrupts(void *ack_data)
 {
     ZF_LOGF_IF(!ack_data, "ack_data is NULL");
@@ -67,41 +53,4 @@ void wait_for_timer_interrupt(env_t *env)
     if (sender_badge) {
         handle_timer_interrupts(env, sender_badge);
     }
-}
-
-void timeout(env_t *env, uint64_t ns, timeout_type_t timeout_type)
-{
-    ZF_LOGD_IF(timeServer_timeoutPending, "Overwriting a previous timeout request\n");
-    timeServer_timeoutType = timeout_type;
-    int error = tm_register_cb(&env->tm, timeout_type, ns, 0,
-                            TIMER_ID, timeout_cb, env->timer_notify_test.cptr);
-    printf("error = %d, ETIME = %d\n", error, ETIME);
-    if (error == ETIME) {
-        error = timeout_cb(env->timer_notify_test.cptr);
-        printf("error = %d\n", error);
-    } else {
-        timeServer_timeoutPending = true;
-    }
-    ZF_LOGF_IF(error != 0, "register_cb failed");
-}
-
-void timer_reset(env_t *env)
-{
-    int error = tm_deregister_cb(&env->tm, TIMER_ID);
-    ZF_LOGF_IF(error, "ltimer_rest failed");
-    timeServer_timeoutPending = false;
-}
-
-uint64_t timestamp(env_t *env)
-{
-    uint64_t time = 0;
-    int error = ltimer_get_time(&env->ltimer, &time);
-    ZF_LOGF_IF(error, "failed to get time");
-    return time;
-}
-
-void timer_cleanup(env_t *env)
-{
-    tm_free_id(&env->tm, TIMER_ID);
-    timeServer_timeoutPending = false;
 }
