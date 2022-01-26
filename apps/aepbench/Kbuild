@@ -1,7 +1,0 @@
-apps-$(CONFIG_APP_AEPBENCH)        += aepbench
-
-aepbench-y                          = common libsel4 libmuslc libsel4vka libsel4allocman \
-                                      libsel4platsupport libsel4muslcsys libsel4vspace libsel4utils \
-                                      libsel4simple libsel4simple-default libplatsupport \
-                                      libsel4 libsel4bench libcpio libutils
-aepbench: kernel_elf $(aepbench-y)
