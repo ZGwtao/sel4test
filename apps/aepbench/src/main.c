@@ -1,6 +1,3 @@
-/* Author: Sean Peters */
-/* Date: 1 May 2014 */
-
 #include <autoconf.h>
 
 /* C includes */

@@ -1,9 +1,4 @@
-/* Author: Sean Peters */
-/* Date: 24 May 2014 */
-/* Measures the raw syscall cost of seL4_Notify for the various fastpath cases. */
-
-#ifndef NOTIFYCOST_H
-#define NOTIFYCOST_H
+#pragma once
 
 /* seL4 libraries */
 #include <vka/vka.h>
@@ -39,5 +34,3 @@ syscall_cost(env_t* env);
 
 void
 syscall_cost(env_t* env);
-
-#endif /* NOTIFYCOST_H */

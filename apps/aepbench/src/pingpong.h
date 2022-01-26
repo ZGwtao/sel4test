@@ -1,9 +1,4 @@
-/* Author: Sean Peters */
-/* Date: 24 May 2014 */
-/* A ping pong benchmark for async ipc. Used to benchmark fastpath AEP IPC */
-
-#ifndef PINGPONG_H
-#define PINGPONG_H
+#pragma once
 
 /* seL4 libraries */
 #include <vka/vka.h>
@@ -15,8 +10,6 @@
 /* Ping pong defines */
 #define WARMUPS 2
 #define ITERATIONS 16
-#define NUM_THREADS 3
-#define WORK_UNITS 20
 #define INTERRUPT_PRIORITY 200
 #define WORKER_PRIORITY 100
 
@@ -42,5 +35,3 @@ start_interrupt_thread(env_t* env, sel4utils_thread_t* int_thread);
 
 void
 pingpong_benchmark(env_t* env);
-
-#endif /* PINGONG_H */

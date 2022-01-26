@@ -1,5 +1,4 @@
-#ifndef UTILS_H
-#define UTILS_H
+#pragma once
 
 /* seL4 libraries */
 #include <sel4/sel4.h>
@@ -72,5 +71,3 @@ calc_mean(int* array, int len);
 
 float
 calc_stddev(int* array, int len, int mean);
-
-#endif /* UTILS_H */

@@ -1,54 +1,11 @@
-
-
-# target_link_libraries(
-#     aepbench
-#     PUBLIC
-#         # sel4_autoconf
-#         muslc
-#         # sel4
-#         # sel4runtime
-#         sel4allocman
-#         sel4vka
-#         sel4utils
-#         # sel4rpc
-#         # sel4test
-#         # sel4sync
-#         sel4muslcsys
-#         # sel4testsupport
-#         # sel4serialserver_tests
-#         sel4platsupport
-#         sel4vspace
-#         sel4bench
-#     # PRIVATE sel4test-driver_Config
-# )
-#
-# Copyright 2017, Data61, CSIRO (ABN 41 687 119 230)
-#
-# SPDX-License-Identifier: BSD-2-Clause
-#
-
 cmake_minimum_required(VERSION 3.7.2)
 
 project(aepbench C)
 
 set(configure_string "")
-
-config_option(Sel4testHaveTimer HAVE_TIMER "Enable tests that require a timer driver" DEFAULT ON)
-
-config_option(Sel4testSimulation SIMULATION "Disable tests not suitable for simulation" DEFAULT OFF)
-
-config_option(
-    Sel4testHaveCache
-    HAVE_CACHE
-    "Enable tests that require a functioning cache"
-    DEFAULT
-    ON
-)
-if(Sel4testAllowSettingsOverride)
-    mark_as_advanced(CLEAR Sel4testHaveTimer Sel4testHaveCache)
-else()
-    mark_as_advanced(FORCE Sel4testHaveTimer Sel4testHaveCache)
-endif()
+config_option(PassiveServer PASSIVE_SERVER "Use a passive server for ping pong benchmark on MCS kernel" DEFAULT ON)
+config_string(NumThreads NUM_THREADS "Number of hardware threads on which to run the ping pong benchmark" DEFAULT 4 UNQUOTE)
+config_string(WorkUnits WORK_UNITS "Number of work units to do" DEFAULT -1 UNQUOTE)
 add_config_library(aepbench "${configure_string}")
 
 find_package(musllibc REQUIRED)
@@ -90,7 +47,7 @@ target_link_libraries(
         sel4bench
     PRIVATE aepbench_Config
 )
-target_compile_options(aepbench PRIVATE -Werror -g)
+target_compile_options(aepbench PRIVATE -Werror -O2)
 
 # Set this image as the rootserver
 include(rootserver)

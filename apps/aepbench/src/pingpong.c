@@ -8,7 +8,6 @@
 #include <stdlib.h>
 
 /* seL4 libraries */
-#include <sel4platsupport/timer.h>
 #include <sel4platsupport/device.h>
 #include <sel4platsupport/platsupport.h>
 #include <platsupport/timer.h>
@@ -20,6 +19,7 @@
 #include <sel4bench/sel4bench.h>
 
 /* AEPBench includes*/
+#include <aepbench/gen_config.h>
 #include "pingpong.h"
 #include "timer.h"
 
@@ -32,21 +32,21 @@ typedef struct ipc_count {
 } ipc_count_t;
 
 typedef struct ipc_counts {
-    ipc_count_t ipc_counts[NUM_THREADS];
+    ipc_count_t ipc_counts[CONFIG_NUM_THREADS];
 } ipc_counts_t;
 
 ipc_counts_t *ipc_counts;
 
-// ipc_count_t ipc_counts[NUM_THREADS];
+// ipc_count_t ipc_counts[CONFIG_NUM_THREADS];
 
 static inline void set_ipc_buffer(thread_config_t *config) {
     seL4_SetUserData((seL4_Word)config->ipc_buf);
 }
 
 static inline void do_work() {
-#if WORK_UNITS >= 0
+#if CONFIG_WORK_UNITS >= 0
     int i;
-    for (i = 0; i < 1 << WORK_UNITS; i++) {
+    for (i = 0; i < 1 << CONFIG_WORK_UNITS; i++) {
         asm volatile("nop");
     }
 #endif
@@ -63,12 +63,16 @@ ping_thread_fn(thread_config_t *thread_config, void *unused)
 }
 
 void
-pong_thread_fn(thread_config_t *thread_config, void *unused)
+pong_thread_fn(thread_config_t *thread_config, void *init_endpoint)
 {
     set_ipc_buffer(thread_config);
 
 #ifdef CONFIG_KERNEL_MCS
+#ifdef CONFIG_PASSIVE_SERVER
+    seL4_NBSendRecv((seL4_CPtr)init_endpoint, seL4_MessageInfo_new(0, 0, 0, 0), thread_config->arg1, NULL, thread_config->arg3);
+#else
     seL4_Recv(thread_config->arg1, NULL, thread_config->arg3);
+#endif
 #else
     seL4_Wait(thread_config->arg1, NULL);
 #endif
@@ -95,8 +99,8 @@ interrupt_thread(thread_config_t *thread_config, void *unused)
     err = ltimer_set_timeout(&env->ltimer, NS_IN_S, TIMEOUT_PERIODIC);
     assert(!err);
     for (int it = 0; it < ITERATIONS; it ++) {
-        uint32_t results[NUM_THREADS];
-        uint32_t results2[NUM_THREADS];
+        uint32_t results[CONFIG_NUM_THREADS];
+        uint32_t results2[CONFIG_NUM_THREADS];
         uint32_t total = 0;
 
         uint32_t cycles0, cycles1;
@@ -108,7 +112,7 @@ interrupt_thread(thread_config_t *thread_config, void *unused)
         cycles0 = sel4bench_get_cycle_count();
 
         /* start */
-        for (int i = 0; i < NUM_THREADS; i++) {
+        for (int i = 0; i < CONFIG_NUM_THREADS; i++) {
             results[i] = ipc_counts->ipc_counts[i].calls_complete;
         }
 
@@ -116,13 +120,13 @@ interrupt_thread(thread_config_t *thread_config, void *unused)
         cycles1 = sel4bench_get_cycle_count();
 
         /* end */
-        for (int i = 0; i < NUM_THREADS; i++) {
+        for (int i = 0; i < CONFIG_NUM_THREADS; i++) {
             results2[i] = ipc_counts->ipc_counts[i].calls_complete;
         }
 
         /* tally */
         aepprintf("###");
-        for (int i = 0; i < NUM_THREADS; i++) {
+        for (int i = 0; i < CONFIG_NUM_THREADS; i++) {
             uint32_t diff = results2[i] - results[i];
             printf("%d:%d,",i, diff);
             total += diff;
@@ -149,10 +153,10 @@ configure_pingpong_threads(env_t* env, sel4utils_thread_t* int_thread,
     err = sel4utils_configure_thread_config(env->vka, env->vspace, env->vspace, int_config, int_thread);
     assert(!err);
 
-    /* Configure NUM_THREADS ping pong threads */
+    /* Configure CONFIG_NUM_THREADS ping pong threads */
     sel4utils_thread_config_t worker_config;
     worker_config = thread_config_default(env->simple, cspace_cspath.root, seL4_NilData, 0, WORKER_PRIORITY);
-    for (int i = 0; i < NUM_THREADS; i++) {
+    for (int i = 0; i < CONFIG_NUM_THREADS; i++) {
         worker_config.sched_params.core = i;
         err = sel4utils_configure_thread_config(env->vka, env->vspace, env->vspace, worker_config, &ping_threads[i]);
         assert(!err);
@@ -189,11 +193,21 @@ start_pingpong_pair(env_t *env, int thread_pair_id, sel4utils_thread_t* ping_thr
     err = vka_alloc_reply(env->vka, &reply);
     assert(!err);
     pong_config->arg3 = reply.cptr;
+#ifdef CONFIG_PASSIVE_SERVER
+    vka_object_t init_endpoint;
+    err = vka_alloc_endpoint(env->vka, &init_endpoint);
+    assert(!err);
+#endif
 #endif
 
     /* Start threads */
     err = sel4utils_start_thread(ping_thread, (void*)ping_thread_fn, ping_config, NULL, 0); assert(!err);
+#if defined(CONFIG_KERNEL_MCS) && defined(CONFIG_PASSIVE_SERVER)
+    err = sel4utils_start_thread(pong_thread, (void*)pong_thread_fn, pong_config, (void *)init_endpoint.cptr, 0); assert(!err);
+#else
     err = sel4utils_start_thread(pong_thread, (void*)pong_thread_fn, pong_config, NULL, 0); assert(!err);
+#endif
+    
 
 #if CONFIG_MAX_NUM_NODES > 1
 #ifdef CONFIG_KERNEL_MCS
@@ -202,16 +216,24 @@ start_pingpong_pair(env_t *env, int thread_pair_id, sel4utils_thread_t* ping_thr
     assert(sched_control != seL4_CapNull);
     err = seL4_SchedControl_Configure(sched_control, ping_thread->sched_context.cptr, timeslice, timeslice, 0, 0);
     assert(!err);
+#ifndef CONFIG_PASSIVE_SERVER
     err = seL4_SchedControl_Configure(sched_control, pong_thread->sched_context.cptr, timeslice, timeslice, 0, 0);
     assert(!err);
+#endif
 #else
     err = seL4_TCB_SetAffinity(ping_thread->tcb.cptr, thread_pair_id); assert(!err);
     err = seL4_TCB_SetAffinity(pong_thread->tcb.cptr, thread_pair_id); assert(!err);
 #endif
 #endif
 
-    seL4_TCB_Resume(ping_thread->tcb.cptr);
     seL4_TCB_Resume(pong_thread->tcb.cptr);
+
+#ifdef CONFIG_PASSIVE_SERVER
+    seL4_Wait(init_endpoint.cptr, NULL);
+    seL4_SchedContext_Unbind(pong_thread->sched_context.cptr);
+#endif
+
+    seL4_TCB_Resume(ping_thread->tcb.cptr);
 }
 
 
@@ -302,8 +324,8 @@ void
 pingpong_benchmark(env_t* env)
 {
     sel4utils_thread_t int_thread;
-    sel4utils_thread_t ping_threads[NUM_THREADS];
-    sel4utils_thread_t pong_threads[NUM_THREADS];
+    sel4utils_thread_t ping_threads[CONFIG_NUM_THREADS];
+    sel4utils_thread_t pong_threads[CONFIG_NUM_THREADS];
     int i;
 
     uint64_t ipc_counts_addr = (uint64_t)malloc((sizeof *ipc_counts) + 64);
@@ -318,7 +340,7 @@ pingpong_benchmark(env_t* env)
 
     /* Start ping pong threads */
     D("Starting ping pong threads.\n");
-    for (i = 0; i < NUM_THREADS; i++ ) {
+    for (i = 0; i < CONFIG_NUM_THREADS; i++ ) {
         start_pingpong_pair (env, i, &ping_threads[i], &pong_threads[i]);
     }
 
