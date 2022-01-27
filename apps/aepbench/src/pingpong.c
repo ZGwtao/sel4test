@@ -55,36 +55,55 @@ static inline void do_work() {
 void 
 ping_thread_fn(thread_config_t *thread_config, void *unused) 
 {
+    seL4_CPtr ep = thread_config->arg1;
+    uint64_t affinity = thread_config->arg2;
+
     set_ipc_buffer(thread_config);
-    while(1) {
-        seL4_Call(thread_config->arg1, seL4_MessageInfo_new(0, 0, 0, 0));
-        ipc_counts->ipc_counts[thread_config->arg2].calls_complete++;
+
+    uint32_t ca, cb;
+    for (int i = 0; ; i++) {
+        if (affinity == 0 && i % 5000000 == 0) {
+            uint32_t cc = sel4bench_get_cycle_count();
+            uint32_t total = cc - ca;
+            uint32_t syscall = cb - ca;
+            uint32_t rest = cc - cb;
+            printf("Total: %u\nSyscall: %u\nRest: %u\n", total, syscall, rest);
+        }
+        ca = sel4bench_get_cycle_count();
+        seL4_Call(ep, seL4_MessageInfo_new(0, 0, 0, 0));
+        cb = sel4bench_get_cycle_count();
+        ipc_counts->ipc_counts[affinity].calls_complete++;
+        do_work();
     }
 }
 
 void
 pong_thread_fn(thread_config_t *thread_config, void *init_endpoint)
 {
+    seL4_CPtr init_ep = (seL4_CPtr)init_endpoint;
+    seL4_CPtr pp_ep = thread_config->arg1;
+    uint64_t affinity = thread_config->arg2;
+    seL4_CPtr reply = thread_config->arg3;
+
     set_ipc_buffer(thread_config);
 
 #ifdef CONFIG_KERNEL_MCS
 #ifdef CONFIG_PASSIVE_SERVER
-    seL4_NBSendRecv((seL4_CPtr)init_endpoint, seL4_MessageInfo_new(0, 0, 0, 0), thread_config->arg1, NULL, thread_config->arg3);
+    seL4_NBSendRecv(init_ep, seL4_MessageInfo_new(0, 0, 0, 0), pp_ep, NULL, reply);
 #else
-    seL4_Recv(thread_config->arg1, NULL, thread_config->arg3);
+    seL4_Recv(pp_ep, NULL, reply);
 #endif
 #else
-    seL4_Wait(thread_config->arg1, NULL);
+    seL4_Wait(pp_ep, NULL);
 #endif
 
     while(1) {
 #ifdef CONFIG_KERNEL_MCS
-        seL4_ReplyRecv(thread_config->arg1, seL4_MessageInfo_new(0, 0, 0, 0), NULL, thread_config->arg3);
+        seL4_ReplyRecv(pp_ep, seL4_MessageInfo_new(0, 0, 0, 0), NULL, reply);
 #else
-        seL4_ReplyRecv(thread_config->arg1, seL4_MessageInfo_new(0, 0, 0, 0), NULL);
+        seL4_ReplyRecv(pp_ep, seL4_MessageInfo_new(0, 0, 0, 0), NULL);
 #endif
-        ipc_counts->ipc_counts[thread_config->arg2].calls_complete++;
-        do_work();
+        ipc_counts->ipc_counts[affinity].calls_complete++;
     }
 }
 
@@ -228,7 +247,7 @@ start_pingpong_pair(env_t *env, int thread_pair_id, sel4utils_thread_t* ping_thr
 
     seL4_TCB_Resume(pong_thread->tcb.cptr);
 
-#ifdef CONFIG_PASSIVE_SERVER
+#if defined(CONFIG_KERNEL_MCS) && defined(CONFIG_PASSIVE_SERVER)
     seL4_Wait(init_endpoint.cptr, NULL);
     seL4_SchedContext_Unbind(pong_thread->sched_context.cptr);
 #endif

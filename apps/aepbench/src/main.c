@@ -67,6 +67,17 @@ bootstrap(env_t* env)
 void *
 main_continued(void *arg)
 {
+    seL4_Word counters = sel4bench_get_num_counters();
+    for (seL4_Word i = 0; i < 64; i++) {
+        printf("i=%lu : ", i);
+
+        // if (counters & i) {
+            const char *description = sel4bench_get_counter_description(i);
+            printf("%s", description);
+        // }
+        printf("\n");
+    }
+
 #ifndef CONFIG_PINGPONG_ONLY
     syscall_cost(&env_global);
     printf("==================================================================================\n");
