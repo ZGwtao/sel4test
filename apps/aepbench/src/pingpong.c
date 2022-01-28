@@ -14,7 +14,7 @@
 #include <platsupport/local_time_manager.h>
 #include <vka/vka.h>
 #include <vka/capops.h>
-#include <platsupport/clock.h>
+// #include <platsupport/clock.h>
 #include <sel4/sel4.h>
 #include <sel4bench/sel4bench.h>
 

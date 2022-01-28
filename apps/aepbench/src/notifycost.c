@@ -17,7 +17,7 @@
 #define NOTIFY_WARMUPS 10
 #define NOTIFY_RUNS    10
 
-void 
+int 
 notify_fn(thread_config_t *thread_config, void *unused)
 {
     int i;
@@ -31,17 +31,21 @@ notify_fn(thread_config_t *thread_config, void *unused)
 
         /* Get the actual measurement */
         start = sel4bench_get_cycle_count();
-        // seL4_Notify(thread_config->arg1, 0);
-        // replaced by
-        seL4_Signal(thread_config->arg1);
+        // seL4_Signal(thread_config->arg1);
+        // seL4_Yield();
+        // seL4_NBSend(thread_config->arg3, seL4_MessageInfo_new(0, 0, 0, 0));
+        // seL4_Send(thread_config->arg3, seL4_MessageInfo_new(0, 0, 0, 0));
+        seL4_BenchmarkNullSyscall();
         end = sel4bench_get_cycle_count();
     }
 
     /* Send back the result */
-    seL4_SetMR(0, end - start);
-    seL4_Send(thread_config->arg2, seL4_MessageInfo_new(0, 0, 0, 1));
+    // seL4_SetMR(0, end - start);
+    // seL4_Send(thread_config->arg2, seL4_MessageInfo_new(0, 0, 0, 1));
 
-    while(1);
+    return end - start;
+
+    // while(1);
 }
 
 void 
@@ -51,6 +55,7 @@ wait_fn(thread_config_t *thread_config, void *unused)
     
     for (i = 0; i < NOTIFY_WARMUPS + 1; ++i) {
         seL4_Wait(thread_config->arg1, NULL);
+        // seL4_Recv(thread_config->arg3, NULL);
     }
     
     while(1);
@@ -148,12 +153,14 @@ run_notifier_wait_threads (vka_t* vka, sel4utils_thread_t* notify_thread,
     wait_config->arg1 = aep.cptr;
     notify_config->arg2 = result_ep.cptr;
     wait_config->arg2 = result_ep.cptr;
+    notify_config->arg3 = (seL4_Word)vka_alloc_endpoint_leaky(vka);
+    wait_config->arg3 = notify_config->arg3;
 
     // /* Start threads */
-    err = sel4utils_start_thread(notify_thread, (void*)notify_fn, notify_config, NULL, 0); 
-    assert(!err);
-    err = sel4utils_start_thread(wait_thread, (void*)wait_fn, wait_config, NULL, 0); 
-    assert(!err);
+    // err = sel4utils_start_thread(notify_thread, (void*)notify_fn, notify_config, NULL, 0); 
+    // assert(!err);
+    // err = sel4utils_start_thread(wait_thread, (void*)wait_fn, wait_config, NULL, 0); 
+    // assert(!err);
 
     // /* Both threads on the same core */
     // err = seL4_TCB_SetAffinity(notify_thread->tcb.cptr, 0); assert(!err);
@@ -161,12 +168,13 @@ run_notifier_wait_threads (vka_t* vka, sel4utils_thread_t* notify_thread,
     // replaced by nothing
     // on MCS, the sel4utils thread wrapper runs the threads on core 0
 
-    seL4_TCB_Resume(notify_thread->tcb.cptr);
-    seL4_TCB_Resume(wait_thread->tcb.cptr);
+    // seL4_TCB_Resume(notify_thread->tcb.cptr);
+    // seL4_TCB_Resume(wait_thread->tcb.cptr);
 
-    seL4_Wait(result_ep.cptr, NULL);
+    // seL4_Wait(result_ep.cptr, NULL);
 
-    return seL4_GetMR(0);
+    // return seL4_GetMR(0);
+    return notify_fn(notify_config, NULL);
 }
 
 void

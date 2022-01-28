@@ -9,9 +9,6 @@
 #include "utils.h"
 
 void 
-notify_fn(thread_config_t *thread_config, void *unused);
-
-void 
 wait_fn(thread_config_t *thread_config, void *unused);
 
 void
