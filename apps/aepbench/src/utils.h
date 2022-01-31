@@ -63,7 +63,7 @@ typedef struct thread_config {
     seL4_Word arg2;
     seL4_Word arg3;
     
-    seL4_Word padding[4];
+    uint8_t padding[32];
 } thread_config_t;
 
 float 

@@ -26,9 +26,9 @@
 #define MAX_TIMER_IRQS 4
 
 typedef struct ipc_count {
-    volatile uint64_t calls_complete;
+    volatile uint32_t calls_complete;
     // padd so we don't share cache lines
-    uint64_t padding[7];
+    uint32_t padding[15];
 } ipc_count_t;
 
 typedef struct ipc_counts {
@@ -56,7 +56,7 @@ void
 ping_thread_fn(thread_config_t *thread_config, void *unused) 
 {
     seL4_CPtr ep = thread_config->arg1;
-    uint64_t affinity = thread_config->arg2;
+    uint32_t affinity = thread_config->arg2;
 
     set_ipc_buffer(thread_config);
 
@@ -347,7 +347,7 @@ pingpong_benchmark(env_t* env)
     sel4utils_thread_t pong_threads[CONFIG_NUM_THREADS];
     int i;
 
-    uint64_t ipc_counts_addr = (uint64_t)malloc((sizeof *ipc_counts) + 64);
+    seL4_Word ipc_counts_addr = (seL4_Word)malloc((sizeof *ipc_counts) + 64);
     ipc_counts_addr = (ipc_counts_addr & ~0xF) + 0x10;
     ipc_counts = (ipc_counts_t *)ipc_counts_addr;
     
