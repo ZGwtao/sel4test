@@ -31,11 +31,12 @@ notify_fn(thread_config_t *thread_config, void *unused)
 
         /* Get the actual measurement */
         start = sel4bench_get_cycle_count();
-        // seL4_Signal(thread_config->arg1);
+        /* seL4_Signal(thread_config->arg1); */
         // seL4_Yield();
-        // seL4_NBSend(thread_config->arg3, seL4_MessageInfo_new(0, 0, 0, 0));
-        // seL4_Send(thread_config->arg3, seL4_MessageInfo_new(0, 0, 0, 0));
-        seL4_BenchmarkNullSyscall();
+        /* seL4_NBSend(thread_config->arg3, seL4_MessageInfo_new(0, 0, 0, 0)); */
+        seL4_Call(thread_config->arg3, seL4_MessageInfo_new(0, 0, 0, 0));
+        /* seL4_Send(thread_config->arg3, seL4_MessageInfo_new(0, 0, 0, 0)); */
+        // seL4_BenchmarkNullSyscall();
         end = sel4bench_get_cycle_count();
     }
 
@@ -52,10 +53,13 @@ void
 wait_fn(thread_config_t *thread_config, void *unused)
 {
     int i;
+
+    seL4_Recv(thread_config->arg3, NULL);
     
     for (i = 0; i < NOTIFY_WARMUPS + 1; ++i) {
-        seL4_Wait(thread_config->arg1, NULL);
-        // seL4_Recv(thread_config->arg3, NULL);
+        /* seL4_Wait(thread_config->arg1, NULL); */
+        /* seL4_Recv(thread_config->arg3, NULL); */
+        seL4_ReplyRecv(thread_config->arg3, seL4_MessageInfo_new(0, 0, 0, 0), NULL);
     }
     
     while(1);
@@ -157,19 +161,19 @@ run_notifier_wait_threads (vka_t* vka, sel4utils_thread_t* notify_thread,
     wait_config->arg3 = notify_config->arg3;
 
     // /* Start threads */
-    // err = sel4utils_start_thread(notify_thread, (void*)notify_fn, notify_config, NULL, 0); 
-    // assert(!err);
-    // err = sel4utils_start_thread(wait_thread, (void*)wait_fn, wait_config, NULL, 0); 
-    // assert(!err);
+    /* err = sel4utils_start_thread(notify_thread, (void*)notify_fn, notify_config, NULL, 0);  */
+    /* assert(!err); */
+    err = sel4utils_start_thread(wait_thread, (void*)wait_fn, wait_config, NULL, 0); 
+    assert(!err);
 
     // /* Both threads on the same core */
     // err = seL4_TCB_SetAffinity(notify_thread->tcb.cptr, 0); assert(!err);
-    // err = seL4_TCB_SetAffinity(wait_thread->tcb.cptr, 0); assert(!err);
+    /* err = seL4_TCB_SetAffinity(wait_thread->tcb.cptr, 0); assert(!err); */
     // replaced by nothing
     // on MCS, the sel4utils thread wrapper runs the threads on core 0
 
     // seL4_TCB_Resume(notify_thread->tcb.cptr);
-    // seL4_TCB_Resume(wait_thread->tcb.cptr);
+    seL4_TCB_Resume(wait_thread->tcb.cptr);
 
     // seL4_Wait(result_ep.cptr, NULL);
 
