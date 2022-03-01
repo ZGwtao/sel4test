@@ -1,4 +1,5 @@
 #include <autoconf.h>
+#include <aepbench/gen_config.h>
 
 /* C includes */
 #include <stdio.h>
@@ -67,20 +68,24 @@ bootstrap(env_t* env)
 void *
 main_continued(void *arg)
 {
-    seL4_Word counters = sel4bench_get_num_counters();
-    for (seL4_Word i = 0; i < 64; i++) {
-        printf("i=%lu : ", i);
+    /* seL4_Word counters = sel4bench_get_num_counters(); */
+    /* for (seL4_Word i = 0; i < 64; i++) { */
+    /*     printf("i=%lu : ", i); */
 
-        // if (counters & i) {
-            const char *description = sel4bench_get_counter_description(i);
-            printf("%s", description);
-        // }
-        printf("\n");
-    }
+    /*     // if (counters & i) { */
+    /*         const char *description = sel4bench_get_counter_description(i); */
+    /*         printf("%s", description); */
+    /*     // } */
+    /*     printf("\n"); */
+    /* } */
 
 #ifndef CONFIG_PINGPONG_ONLY
     syscall_cost(&env_global);
+#ifdef CONFIG_SYSCALL_ONLY
+    aepprintf("All is well in the universe\n");
+#else
     printf("==================================================================================\n");
+#endif
 #endif
 
 #ifndef CONFIG_SYSCALL_ONLY
