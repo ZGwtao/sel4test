@@ -6,6 +6,8 @@ set(configure_string "")
 config_option(PassiveServer PASSIVE_SERVER "Use a passive server for ping pong benchmark on MCS kernel" DEFAULT ON)
 config_string(NumThreads NUM_THREADS "Number of hardware threads on which to run the ping pong benchmark" DEFAULT 4 UNQUOTE)
 config_string(WorkUnits WORK_UNITS "Number of work units to do" DEFAULT -1 UNQUOTE)
+config_option(PingPongOnly PINGPONG_ONLY "Run only the ping-pong benchmark" DEFAULT OFF)
+config_option(SyscallOnly SYSCALL_ONLY "Run only the syscall benchmark" DEFAULT OFF)
 add_config_library(aepbench "${configure_string}")
 
 find_package(musllibc REQUIRED)
