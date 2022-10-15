@@ -84,3 +84,7 @@ target_link_libraries(
     PRIVATE sel4test-driver_Config
 )
 target_compile_options(sel4test-driver PRIVATE -Werror -g)
+
+# Set this image as the rootserver
+include(rootserver)
+DeclareRootserver(sel4test-driver)
