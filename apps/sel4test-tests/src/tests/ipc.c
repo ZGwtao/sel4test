@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <sel4/sel4.h>
 #include <vka/object.h>
+#include <sel4bench/sel4bench.h>
 
 #include "../helpers.h"
 
@@ -1364,3 +1365,195 @@ static int test_sched_donation_cross_core(env_t env)
 DEFINE_TEST(IPC0028, "Cross core sched donation", test_sched_donation_cross_core,
             config_set(CONFIG_KERNEL_MCS) &&config_set(CONFIG_MAX_NUM_NODES) &&CONFIG_MAX_NUM_NODES > 1);
 #endif /* CONFIG_KERNEL_MCS */
+
+static int replywait_echo_func(seL4_Word init_ep, seL4_Word endpoint, seL4_CPtr reply, seL4_Word arg3)
+{
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 0);
+    tag = seL4_NBSendRecv(init_ep, tag, endpoint, NULL, reply);
+    for (;;) {
+        tag = seL4_ReplyRecv(endpoint, tag, NULL, reply);
+    }
+
+    return SUCCESS;
+}
+
+static int call_fastpath_func(seL4_Word endpoint, seL4_Word seed, seL4_Word reply, seL4_Word core)
+{
+    test_result_t result = SUCCESS;
+    for (int i = 0; i < 100000; i++) {
+        seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 0);
+        tag = seL4_Call(endpoint, tag);
+    }
+
+    return result;
+}
+
+static int test_core_local_ipc_concurrently(env_t env, seL4_Word nr_cores, bool shared_endpoint)
+{
+    const int MAX_CORES = 16;
+    assert(nr_cores <= MAX_CORES);
+
+    vka_t *vka = &env->vka;
+
+    helper_thread_t client[MAX_CORES];
+    helper_thread_t server[MAX_CORES];
+    seL4_CPtr init_ep;
+    seL4_CPtr endpoints[MAX_CORES];
+    seL4_CPtr reply[MAX_CORES];
+
+    init_ep = vka_alloc_endpoint_leaky(vka);
+    if (shared_endpoint) {
+        endpoints[0] = vka_alloc_endpoint_leaky(vka);
+    }
+
+    seL4_Word start_number = 0xabbacafe;
+    for (int core = 0; core < nr_cores; core++) {
+        seL4_CPtr ep;
+        if (shared_endpoint) {
+            ep = endpoints[0];
+        } else {
+            ep = endpoints[core] = vka_alloc_endpoint_leaky(vka);
+        }
+
+        reply[core] = vka_alloc_reply_leaky(vka);
+        create_passive_thread(env, &server[core], replywait_echo_func, init_ep, ep, reply[core], 0);
+
+        create_helper_thread(env, &client[core]);
+        set_helper_affinity(env, &client[core], core);
+        start_helper(env, &client[core], (helper_fn_t) call_fastpath_func, ep, start_number, 0, core);
+        start_number += 0x71717171;
+    }
+
+    for (int core = 0; core < nr_cores; core++) {
+        test_result_t res = wait_for_helper(&client[core]);
+        test_eq(res, SUCCESS);
+        cleanup_helper(env, &client[core]);
+        if (core == 0)
+            cleanup_helper(env, &server[core]);
+        if (!shared_endpoint) {
+            int error = cnode_delete(env, endpoints[core]);
+            test_error_eq(error, seL4_NoError);
+        }
+    }
+    if (shared_endpoint) {
+        int error = cnode_delete(env, endpoints[0]);
+        test_error_eq(error, seL4_NoError);
+    }
+    int error = cnode_delete(env, init_ep);
+    test_error_eq(error, seL4_NoError);
+
+    return sel4test_get_result();
+}
+
+static int
+test_concurrent_ipc(env_t env)
+{
+    return test_core_local_ipc_concurrently(env, env->cores, false);
+}
+DEFINE_TEST(IPC2001, "Test SMP seL4_Signal + seL4_Wait to one notification", test_concurrent_ipc, true);
+
+static int
+test_concurrent_ipc_shared_endpoint(env_t env)
+{
+    return test_core_local_ipc_concurrently(env, env->cores, true);
+}
+DEFINE_TEST(IPC2002, "Test SMP seL4_Signal + seL4_Wait to one notification", test_concurrent_ipc_shared_endpoint, true);
+
+static int test_signal_fastpath_notification_synchronisation_signaller_func(seL4_Word notification, seL4_Word nops, seL4_Word extra1, seL4_Word extra2)
+{
+    for (seL4_Word i = 0; i < nops; i++) {
+        asm volatile ("nop" ::);
+    }
+    for (int i = 0; i < 750; i++) {
+        seL4_Signal(notification);
+    }
+    return SUCCESS;
+}
+
+static int test_signal_fastpath_notification_synchronisation_waiter_func(seL4_Word notification, seL4_Word extra0, seL4_Word extra1, seL4_Word extra2)
+{
+    seL4_Wait(notification, NULL);
+    return SUCCESS;
+}
+
+static int test_signal_fastpath_notification_synchronisation(env_t env, seL4_Word nr_cores, bool shared_notification)
+{
+    vka_t *vka = &env->vka;
+
+    assert(nr_cores >= 4);
+
+    const int nr_waiters = 750;
+    const int nr_signallers = 2;
+    const int nr_notifications = shared_notification ? 1 : 2;
+
+    sel4bench_init();
+
+    helper_thread_t *signallers = calloc(nr_cores, sizeof *signallers);
+    helper_thread_t *waiters = calloc(nr_waiters, sizeof *waiters);
+    assert(waiters);
+    seL4_CPtr *notifications = calloc(nr_notifications, sizeof *notifications);
+    for (int i = 0; i < nr_notifications; i++) {
+        notifications[i] = vka_alloc_notification_leaky(vka);
+    }
+    for (int i = 0; i < nr_waiters; i++) {
+        helper_thread_t *waiter = &waiters[i];
+        create_helper_thread(env, waiter);
+        set_helper_priority(env, waiter, 50);
+        set_helper_affinity(env, waiter, 1);
+    }
+    for (int i = 0; i < nr_signallers; i++) {
+        helper_thread_t *signaller = &signallers[i];
+        create_helper_thread(env, signaller);
+        set_helper_priority(env, signaller, 100);
+        set_helper_affinity(env, signaller, i + 2);
+    }
+
+    seL4_Word nops = 0;
+
+    for (int i = 0; i < 20000; i++) {
+        if (i % 100 == 0) printf("Iteration %d\n", i);
+
+        for (int i = 0; i < nr_waiters; i++) {
+            size_t notification_index = (shared_notification || i < nr_waiters / 2) ? 0 : 1;
+            start_helper(env, &waiters[i], test_signal_fastpath_notification_synchronisation_waiter_func, notifications[notification_index], 0, 0, 0);
+        }
+
+        start_helper(env, &signallers[0], test_signal_fastpath_notification_synchronisation_signaller_func, notifications[0], nops, 0, 0);
+        seL4_Word pre = sel4bench_get_cycle_count();
+        start_helper(env, &signallers[1], test_signal_fastpath_notification_synchronisation_signaller_func, notifications[shared_notification ? 0 : 1], 0, 0, 0);
+        seL4_Word post = sel4bench_get_cycle_count();
+        nops = post - pre;
+
+        for (int i = 0; i < nr_waiters; i++) {
+            wait_for_helper(&waiters[i]);
+        }
+        for (int i = 0; i < nr_signallers; i++) {
+            wait_for_helper(&signallers[i]);
+        }
+    }
+    for (int i = 0; i < nr_waiters; i++) {
+        cleanup_helper(env, &waiters[i]);
+    }
+    for (int i = 0; i < nr_signallers; i++) {
+        cleanup_helper(env, &signallers[i]);
+    }
+
+    free(signallers);
+    free(waiters);
+
+    return sel4test_get_result();
+}
+
+static int
+test_signal_wait_notification_contention(env_t env)
+{
+    return test_signal_fastpath_notification_synchronisation(env, env->cores, true);
+}
+DEFINE_TEST(IPC2003, "Test SMP seL4_Signal + seL4_Wait to one notification", test_signal_wait_notification_contention, true);
+
+static int
+test_signal_wait_scheduler_contention(env_t env)
+{
+    return test_signal_fastpath_notification_synchronisation(env, env->cores, false);
+}
+DEFINE_TEST(IPC2004, "Test SMP seL4_Signal + seL4_Wait to different notifications where waiting threads have the same affinity", test_signal_wait_scheduler_contention, true);

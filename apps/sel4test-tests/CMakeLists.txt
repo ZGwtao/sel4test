@@ -48,6 +48,7 @@ target_link_libraries(
         sel4runtime
         sel4allocman
         sel4vka
+        sel4bench
         sel4utils
         sel4rpc
         sel4test
