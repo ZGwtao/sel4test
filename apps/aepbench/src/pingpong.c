@@ -26,9 +26,11 @@
 #define MAX_TIMER_IRQS 4
 
 typedef struct ipc_count {
-    volatile uint32_t calls_complete;
+    volatile seL4_Word calls_complete;
+    volatile seL4_Word wcet;
+    volatile seL4_Word wcets[100];
     // padd so we don't share cache lines
-    uint32_t padding[15];
+    uint32_t padding[14];
 } ipc_count_t;
 
 typedef struct ipc_counts {
@@ -52,26 +54,25 @@ static inline void do_work() {
 #endif
 }
 
-void 
-ping_thread_fn(thread_config_t *thread_config, void *unused) 
+void
+ping_thread_fn(thread_config_t *thread_config, void *unused)
 {
     seL4_CPtr ep = thread_config->arg1;
     uint32_t affinity = thread_config->arg2;
 
     set_ipc_buffer(thread_config);
 
+    // if (affinity == 0) printf("Ping start\n");
+
     uint32_t ca, cb;
     for (int i = 0; ; i++) {
-        if (affinity == 0 && i % 5000000 == 0) {
-            uint32_t cc = sel4bench_get_cycle_count();
-            uint32_t total = cc - ca;
-            uint32_t syscall = cb - ca;
-            uint32_t rest = cc - cb;
-            printf("Total: %u\nSyscall: %u\nRest: %u\n", total, syscall, rest);
-        }
-        ca = sel4bench_get_cycle_count();
+        // if (i % 5000000 == 0) {
+        //     printf("Ping %u\n", affinity);
+        // }
+        // ca = sel4bench_get_cycle_count();
         seL4_Call(ep, seL4_MessageInfo_new(0, 0, 0, 0));
-        cb = sel4bench_get_cycle_count();
+        // seL4_BenchmarkNullSyscall();
+        // cb = sel4bench_get_cycle_count();
         ipc_counts->ipc_counts[affinity].calls_complete++;
         do_work();
     }
@@ -80,10 +81,15 @@ ping_thread_fn(thread_config_t *thread_config, void *unused)
 void
 pong_thread_fn(thread_config_t *thread_config, void *init_endpoint)
 {
+    // while (true);
     seL4_CPtr init_ep = (seL4_CPtr)init_endpoint;
     seL4_CPtr pp_ep = thread_config->arg1;
     uint64_t affinity = thread_config->arg2;
     seL4_CPtr reply = thread_config->arg3;
+
+    // printf("Pong start\n");
+
+    for (;;);
 
     set_ipc_buffer(thread_config);
 
@@ -97,18 +103,52 @@ pong_thread_fn(thread_config_t *thread_config, void *init_endpoint)
     seL4_Wait(pp_ep, NULL);
 #endif
 
-    while(1) {
+    for (int i =0 ; ; i++) {
+        // if (i % 5000000 == 0) {
+        //     printf("Pong\n");
+        // }
 #ifdef CONFIG_KERNEL_MCS
         seL4_ReplyRecv(pp_ep, seL4_MessageInfo_new(0, 0, 0, 0), NULL, reply);
 #else
         seL4_ReplyRecv(pp_ep, seL4_MessageInfo_new(0, 0, 0, 0), NULL);
 #endif
-        ipc_counts->ipc_counts[affinity].calls_complete++;
+        // seL4_BenchmarkNullSyscall();
     }
 }
 
-void 
-interrupt_thread(thread_config_t *thread_config, void *unused) 
+void
+notification_ping_thread_fn(thread_config_t *thread_config, void *unused)
+{
+    seL4_CPtr ep = thread_config->arg1;
+    uint32_t affinity = thread_config->arg2;
+
+    if (affinity == 0) {
+        ipc_counts->ipc_counts[affinity].wcet = 0;
+        for (seL4_Word i = 0; ; i++) {
+            seL4_Word pre = sel4bench_get_cycle_count();
+            seL4_Signal(ep);
+            seL4_Word et = sel4bench_get_cycle_count() - pre;
+            ipc_counts->ipc_counts[affinity].calls_complete++;
+        }
+    } else {
+        for (;;) {
+            seL4_NBWait(ep, NULL);
+        }
+    }
+}
+
+void
+notification_pong_thread_fn(thread_config_t *thread_config, void *init_endpoint)
+{
+    seL4_CPtr ep = thread_config->arg1;
+
+    for (;;) {
+        seL4_Wait(ep, NULL);
+    }
+}
+
+void
+interrupt_thread(thread_config_t *thread_config, void *unused)
 {
     int err;
 
@@ -117,6 +157,7 @@ interrupt_thread(thread_config_t *thread_config, void *unused)
 
     err = ltimer_set_timeout(&env->ltimer, NS_IN_S, TIMEOUT_PERIODIC);
     assert(!err);
+    uint32_t total_all_runs = 0;
     for (int it = 0; it < ITERATIONS; it ++) {
         uint32_t results[CONFIG_NUM_THREADS];
         uint32_t results2[CONFIG_NUM_THREADS];
@@ -147,19 +188,20 @@ interrupt_thread(thread_config_t *thread_config, void *unused)
         aepprintf("###");
         for (int i = 0; i < CONFIG_NUM_THREADS; i++) {
             uint32_t diff = results2[i] - results[i];
-            printf("%d:%d,",i, diff);
+            printf("%d:%d,%lu; ",i, diff, ipc_counts->ipc_counts[i].wcet);
             total += diff;
         }
         printf("Total:%d\n", total);
-        printf("Cycles: %d\n", cycles1 - cycles0);
+        total_all_runs += total;
     }
 
+    printf("Average across all runs: %d\n", total_all_runs / ITERATIONS);
     aepprintf("All is well in the universe\n");
     while(1);
 }
 
 void
-configure_pingpong_threads(env_t* env, sel4utils_thread_t* int_thread, 
+configure_pingpong_threads(env_t* env, sel4utils_thread_t* int_thread,
         sel4utils_thread_t* ping_threads, sel4utils_thread_t* pong_threads)
 {
     int err;
@@ -185,11 +227,9 @@ configure_pingpong_threads(env_t* env, sel4utils_thread_t* int_thread,
 }
 
 void
-start_pingpong_pair(env_t *env, int thread_pair_id, sel4utils_thread_t* ping_thread, 
-        sel4utils_thread_t* pong_thread)
+start_pingpong_pair(env_t *env, int thread_pair_id, sel4utils_thread_t* ping_thread, sel4utils_thread_t* pong_thread)
 {
-    vka_object_t ping_aep;
-    vka_object_t pong_aep;
+    vka_object_t pp_ep;
     int err;
 
     thread_config_t *ping_config = malloc(sizeof(thread_config_t));
@@ -198,59 +238,46 @@ start_pingpong_pair(env_t *env, int thread_pair_id, sel4utils_thread_t* ping_thr
     pong_config->ipc_buf = (void*)pong_thread->ipc_buffer_addr;
 
     /* allocate ping and pong async endpoitns */
-    err = vka_alloc_endpoint(env->vka, &ping_aep);
+    err = vka_alloc_endpoint(env->vka, &pp_ep);
     assert(!err);
 
     /* Assign AEP to notify */
-    ping_config->arg1 = ping_aep.cptr;
-    pong_config->arg1 = ping_aep.cptr;
+    ping_config->arg1 = /* pp_ep.cptr */ vka_alloc_notification_leaky(env->vka);
+    pong_config->arg1 = pp_ep.cptr;
     /* Assign thread pair ID, which duals as CPU affinity index */
     ping_config->arg2 = thread_pair_id;
     pong_config->arg2 = thread_pair_id;
-#ifdef CONFIG_KERNEL_MCS
+
     vka_object_t reply;
     err = vka_alloc_reply(env->vka, &reply);
     assert(!err);
     pong_config->arg3 = reply.cptr;
-#ifdef CONFIG_PASSIVE_SERVER
-    vka_object_t init_endpoint;
-    err = vka_alloc_endpoint(env->vka, &init_endpoint);
+
+    vka_object_t init_ep;
+    err = vka_alloc_endpoint(env->vka, &init_ep);
     assert(!err);
-#endif
-#endif
+
+    void *ping_function = notification_ping_thread_fn;
+    void *pong_function = pong_thread_fn;
 
     /* Start threads */
-    err = sel4utils_start_thread(ping_thread, (void*)ping_thread_fn, ping_config, NULL, 0); assert(!err);
-#if defined(CONFIG_KERNEL_MCS) && defined(CONFIG_PASSIVE_SERVER)
-    err = sel4utils_start_thread(pong_thread, (void*)pong_thread_fn, pong_config, (void *)init_endpoint.cptr, 0); assert(!err);
-#else
-    err = sel4utils_start_thread(pong_thread, (void*)pong_thread_fn, pong_config, NULL, 0); assert(!err);
-#endif
-    
+    err = sel4utils_start_thread(ping_thread, (void*)ping_function, ping_config, NULL, 0);
+    assert(!err);
+    err = sel4utils_start_thread(pong_thread, (void*)pong_function, pong_config, (void *)init_ep.cptr, 0);
+    assert(!err);
 
 #if CONFIG_MAX_NUM_NODES > 1
-#ifdef CONFIG_KERNEL_MCS
     seL4_Time timeslice = CONFIG_BOOT_THREAD_TIME_SLICE * US_IN_S;
     seL4_CPtr sched_control = simple_get_sched_ctrl(env->simple, thread_pair_id);
     assert(sched_control != seL4_CapNull);
     err = seL4_SchedControl_Configure(sched_control, ping_thread->sched_context.cptr, timeslice, timeslice, 0, 0);
     assert(!err);
-#ifndef CONFIG_PASSIVE_SERVER
-    err = seL4_SchedControl_Configure(sched_control, pong_thread->sched_context.cptr, timeslice, timeslice, 0, 0);
-    assert(!err);
-#endif
-#else
-    err = seL4_TCB_SetAffinity(ping_thread->tcb.cptr, thread_pair_id); assert(!err);
-    err = seL4_TCB_SetAffinity(pong_thread->tcb.cptr, thread_pair_id); assert(!err);
-#endif
 #endif
 
-    seL4_TCB_Resume(pong_thread->tcb.cptr);
+    /* seL4_TCB_Resume(pong_thread->tcb.cptr); */
 
-#if defined(CONFIG_KERNEL_MCS) && defined(CONFIG_PASSIVE_SERVER)
-    seL4_Wait(init_endpoint.cptr, NULL);
-    seL4_SchedContext_Unbind(pong_thread->sched_context.cptr);
-#endif
+    /* seL4_Wait(init_ep.cptr, NULL); */
+    /* seL4_SchedContext_Unbind(pong_thread->sched_context.cptr); */
 
     seL4_TCB_Resume(ping_thread->tcb.cptr);
 }
@@ -311,7 +338,7 @@ static irq_id_t sel4test_timer_irq_register(void *cookie, ps_irq_t irq, irq_call
     return num_timer_irqs++;
 }
 
-void 
+void
 start_interrupt_thread(env_t* env, sel4utils_thread_t* int_thread)
 {
     int err;
@@ -325,7 +352,7 @@ start_interrupt_thread(env_t* env, sel4utils_thread_t* int_thread)
     err = ltimer_default_init(&env->ltimer, env->ops, NULL, NULL);
     ZF_LOGF_IF(err, "Failed to setup the timers");
     assert(!err);
-    
+
     /* Restore the IRQ interface's register function */
     env->ops.irq_ops.irq_register_fn = irq_register_fn_copy;
     env->ops.irq_ops.cookie = cookie_copy;
@@ -350,7 +377,7 @@ pingpong_benchmark(env_t* env)
     seL4_Word ipc_counts_addr = (seL4_Word)malloc((sizeof *ipc_counts) + 64);
     ipc_counts_addr = (ipc_counts_addr & ~0xF) + 0x10;
     ipc_counts = (ipc_counts_t *)ipc_counts_addr;
-    
+
     aepprintf("Measuring AEP ping pong throughput\n");
 
     /* Configure threads */

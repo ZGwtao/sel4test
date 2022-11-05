@@ -21,8 +21,8 @@ int
 notify_fn(thread_config_t *thread_config, void *unused)
 {
     int i;
-    unsigned int start;
-    unsigned int end;
+    unsigned int start = 0;
+    unsigned int end = 0;
 
     for (i = 0; i < NOTIFY_WARMUPS + 1; ++i) {
         /* If the waiter thread has the same priority we want it to be waiting before we notify */
@@ -30,21 +30,21 @@ notify_fn(thread_config_t *thread_config, void *unused)
         seL4_Yield();
 
         /* Get the actual measurement */
-        start = sel4bench_get_cycle_count();
+        // start = sel4bench_get_cycle_count();
         /* seL4_Signal(thread_config->arg1); */
         // seL4_Yield();
         /* seL4_NBSend(thread_config->arg3, seL4_MessageInfo_new(0, 0, 0, 0)); */
-        seL4_Call(thread_config->arg3, seL4_MessageInfo_new(0, 0, 0, 0));
+        // seL4_Call(thread_config->arg3, seL4_MessageInfo_new(0, 0, 0, 0));
         /* seL4_Send(thread_config->arg3, seL4_MessageInfo_new(0, 0, 0, 0)); */
         // seL4_BenchmarkNullSyscall();
-        end = sel4bench_get_cycle_count();
+        // end = sel4bench_get_cycle_count();
     }
 
-    seL4_Send(thread_config->arg3, seL4_MessageInfo_new(0, 0, 0, 0));
+    // seL4_Send(thread_config->arg3, seL4_MessageInfo_new(0, 0, 0, 0));
 
     /* Send back the result */
     seL4_SetMR(0, end - start);
-    seL4_Send(thread_config->arg2, seL4_MessageInfo_new(0, 0, 0, 1));
+    // seL4_Send(thread_config->arg2, seL4_MessageInfo_new(0, 0, 0, 1));
 
     // return end - start;
 
@@ -56,12 +56,12 @@ wait_fn(thread_config_t *thread_config, void *unused)
 {
     int i;
 
-    seL4_Recv(thread_config->arg3, NULL);
+    // seL4_Recv(thread_config->arg3, NULL);
     
     for (i = 0; i < NOTIFY_WARMUPS + 1; ++i) {
         /* seL4_Wait(thread_config->arg1, NULL); */
         /* seL4_Recv(thread_config->arg3, NULL); */
-        seL4_ReplyRecv(thread_config->arg3, seL4_MessageInfo_new(0, 0, 0, 0), NULL);
+        // seL4_ReplyRecv(thread_config->arg3, seL4_MessageInfo_new(0, 0, 0, 0), NULL);
     }
     
     

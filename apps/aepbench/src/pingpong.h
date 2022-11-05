@@ -9,7 +9,7 @@
 
 /* Ping pong defines */
 #define WARMUPS 2
-#define ITERATIONS 16
+#define ITERATIONS 3
 #define INTERRUPT_PRIORITY 200
 #define WORKER_PRIORITY 100
 

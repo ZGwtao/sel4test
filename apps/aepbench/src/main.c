@@ -35,7 +35,7 @@ vspace_t vspace_global;
 simple_t simple_global;
 sel4utils_alloc_data_t global_alloc_data;
 
-void 
+void
 bootstrap(env_t* env)
 {
     allocman_t* allocman;
@@ -52,7 +52,7 @@ bootstrap(env_t* env)
     allocman_make_vka(env->vka, allocman);
 
     /* now we can initialize a vspace using allocman */
-    err = sel4utils_bootstrap_vspace_with_bootinfo_leaky(env->vspace, &global_alloc_data, 
+    err = sel4utils_bootstrap_vspace_with_bootinfo_leaky(env->vspace, &global_alloc_data,
             seL4_CapInitThreadPD, env->vka, env->bootinfo);
     assert(!err);
 
@@ -80,7 +80,7 @@ main_continued(void *arg)
     /* } */
 
 #ifndef CONFIG_PINGPONG_ONLY
-    syscall_cost(&env_global);
+    /* syscall_cost(&env_global); */
 #ifdef CONFIG_SYSCALL_ONLY
     aepprintf("All is well in the universe\n");
 #else
@@ -98,10 +98,12 @@ main_continued(void *arg)
     return 0;
 }
 
-int 
-main(void) 
+int
+main(void)
 {
     sel4bench_init();
+
+    // for (;;) seL4_BenchmarkNullSyscall();
 
     env_global.vspace = &vspace_global;
     env_global.simple = &simple_global;
