@@ -58,10 +58,9 @@ typedef struct env {
 } env_t;
 
 typedef struct thread_config {
-    void *ipc_buf;
-    seL4_Word arg1;
-    seL4_Word arg2;
-    seL4_Word arg3;
+    seL4_CPtr init_ep;
+    seL4_Word affinity;
+    seL4_Word params[3];
     
     uint8_t padding[32];
 } thread_config_t;

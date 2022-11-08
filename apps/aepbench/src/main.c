@@ -23,7 +23,6 @@
 
 /* AEPBench includes */
 #include "utils.h"
-#include "notifycost.h"
 #include "pingpong.h"
 
 #define MEM_POOL_SIZE (1 * 1024 * 256 * 64)

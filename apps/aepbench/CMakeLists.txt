@@ -30,7 +30,7 @@ set(LibNanopb ON CACHE BOOL "" FORCE)
 sel4_projects_libs_import_libraries()
 add_subdirectory(../../libsel4testsupport libsel4testsupport)
 
-add_executable(aepbench EXCLUDE_FROM_ALL src/main.c src/notifycost.c src/pingpong.c src/timer.c src/utils.c)
+add_executable(aepbench EXCLUDE_FROM_ALL src/main.c src/pingpong.c src/timer.c src/utils.c)
 target_link_libraries(
     aepbench
     PUBLIC
