@@ -57,14 +57,6 @@ typedef struct env {
     timer_callback_info_t timer_cbs[MAX_TIMER_IRQS];
 } env_t;
 
-typedef struct thread_config {
-    seL4_CPtr init_ep;
-    seL4_Word affinity;
-    seL4_Word params[3];
-    
-    uint8_t padding[32];
-} thread_config_t;
-
 float 
 calc_mean(int* array, int len);
 
