@@ -21,7 +21,7 @@
 #define D(x...)
 #endif
 
-#define aepprintf(x...) do { printf("AEPBENCH | "); printf(x); } while (0);
+#define fglprintf(x...) do { printf("FGLBENCH | "); printf(x); } while (0);
 
 
 #define MAX_TIMER_IRQS 4
@@ -56,15 +56,6 @@ typedef struct env {
     /* timer callback information */
     timer_callback_info_t timer_cbs[MAX_TIMER_IRQS];
 } env_t;
-
-typedef struct thread_config {
-    void *ipc_buf;
-    seL4_Word arg1;
-    seL4_Word arg2;
-    seL4_Word arg3;
-    
-    seL4_Word padding[4];
-} thread_config_t;
 
 float 
 calc_mean(int* array, int len);

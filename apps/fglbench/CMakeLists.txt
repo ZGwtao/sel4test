@@ -1,14 +1,11 @@
 cmake_minimum_required(VERSION 3.7.2)
 
-project(aepbench C)
+project(fglbench C)
 
 set(configure_string "")
-config_option(PassiveServer PASSIVE_SERVER "Use a passive server for ping pong benchmark on MCS kernel" DEFAULT ON)
-config_string(NumThreads NUM_THREADS "Number of hardware threads on which to run the ping pong benchmark" DEFAULT 4 UNQUOTE)
-config_string(WorkUnits WORK_UNITS "Number of work units to do" DEFAULT -1 UNQUOTE)
-config_option(PingPongOnly PINGPONG_ONLY "Run only the ping-pong benchmark" DEFAULT OFF)
-config_option(SyscallOnly SYSCALL_ONLY "Run only the syscall benchmark" DEFAULT OFF)
-add_config_library(aepbench "${configure_string}")
+config_string(WhichBenchmark WHICH_BENCHMARK "Which benchmark to run (0-5)" DEFAULT 0 UNQUOTE)
+config_string(NumCores NUM_CORES "Number of hardware threads on which to run the ping pong benchmark" DEFAULT 4 UNQUOTE)
+add_config_library(fglbench "${configure_string}")
 
 find_package(musllibc REQUIRED)
 find_package(util_libs REQUIRED)
@@ -30,9 +27,9 @@ set(LibNanopb ON CACHE BOOL "" FORCE)
 sel4_projects_libs_import_libraries()
 add_subdirectory(../../libsel4testsupport libsel4testsupport)
 
-add_executable(aepbench EXCLUDE_FROM_ALL src/main.c src/notifycost.c src/pingpong.c src/timer.c src/utils.c)
+add_executable(fglbench EXCLUDE_FROM_ALL src/main.c src/benchmarks.c src/timer.c src/utils.c)
 target_link_libraries(
-    aepbench
+    fglbench
     PUBLIC
         sel4_autoconf
         muslc
@@ -47,10 +44,10 @@ target_link_libraries(
         sel4muslcsys
         sel4testsupport
         sel4bench
-    PRIVATE aepbench_Config
+    PRIVATE fglbench_Config
 )
-target_compile_options(aepbench PRIVATE -Werror -O2)
+target_compile_options(fglbench PRIVATE -Werror -O2)
 
 # Set this image as the rootserver
 include(rootserver)
-DeclareRootserver(aepbench)
+DeclareRootserver(fglbench)

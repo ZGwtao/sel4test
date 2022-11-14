@@ -1,5 +1,5 @@
 #include <autoconf.h>
-#include <aepbench/gen_config.h>
+#include <fglbench/gen_config.h>
 
 /* C includes */
 #include <stdio.h>
@@ -21,10 +21,9 @@
 #include <sel4platsupport/platsupport.h>
 #include <platsupport/timer.h>
 
-/* AEPBench includes */
+/* FGLBench includes */
 #include "utils.h"
-#include "notifycost.h"
-#include "pingpong.h"
+#include "benchmarks.h"
 
 #define MEM_POOL_SIZE (1 * 1024 * 256 * 64)
 
@@ -35,7 +34,7 @@ vspace_t vspace_global;
 simple_t simple_global;
 sel4utils_alloc_data_t global_alloc_data;
 
-void 
+void
 bootstrap(env_t* env)
 {
     allocman_t* allocman;
@@ -52,7 +51,7 @@ bootstrap(env_t* env)
     allocman_make_vka(env->vka, allocman);
 
     /* now we can initialize a vspace using allocman */
-    err = sel4utils_bootstrap_vspace_with_bootinfo_leaky(env->vspace, &global_alloc_data, 
+    err = sel4utils_bootstrap_vspace_with_bootinfo_leaky(env->vspace, &global_alloc_data,
             seL4_CapInitThreadPD, env->vka, env->bootinfo);
     assert(!err);
 
@@ -68,47 +67,36 @@ bootstrap(env_t* env)
 void *
 main_continued(void *arg)
 {
-    /* seL4_Word counters = sel4bench_get_num_counters(); */
-    /* for (seL4_Word i = 0; i < 64; i++) { */
-    /*     printf("i=%lu : ", i); */
-
-    /*     // if (counters & i) { */
-    /*         const char *description = sel4bench_get_counter_description(i); */
-    /*         printf("%s", description); */
-    /*     // } */
-    /*     printf("\n"); */
-    /* } */
-
-#ifndef CONFIG_PINGPONG_ONLY
-    syscall_cost(&env_global);
-#ifdef CONFIG_SYSCALL_ONLY
-    aepprintf("All is well in the universe\n");
-#else
-    printf("==================================================================================\n");
-#endif
-#endif
-
-#ifndef CONFIG_SYSCALL_ONLY
-    /* This technically should never return */
-    pingpong_benchmark(&env_global);
-#endif
+    typedef void (*benchmark_t)(env_t *);
+    benchmark_t benchmarks[] = {
+        ipc_benchmark_0,
+        ipc_benchmark_1,
+        ipc_benchmark_2,
+        signal_benchmark_0,
+        signal_benchmark_1,
+        signal_benchmark_2,
+    };
+    fglprintf("Running benchmark %d on %d cores\n", CONFIG_WHICH_BENCHMARK, CONFIG_NUM_CORES);
+    benchmarks[CONFIG_WHICH_BENCHMARK](&env_global);
 
     /* We are done */
     seL4_TCB_Suspend(seL4_CapInitThreadTCB);
     return 0;
 }
 
-int 
-main(void) 
+int
+main(void)
 {
     sel4bench_init();
+
+    // for (;;) seL4_BenchmarkNullSyscall();
 
     env_global.vspace = &vspace_global;
     env_global.simple = &simple_global;
 
     /* bootstrap into environment */
     bootstrap(&env_global);
-    aepprintf("Bootstrapped into environment.\n");
+    fglprintf("Bootstrapped into environment.\n");
 
     sel4utils_run_on_stack(env_global.vspace, main_continued, NULL, NULL);
 }
