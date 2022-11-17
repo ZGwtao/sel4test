@@ -1450,14 +1450,14 @@ test_concurrent_ipc(env_t env)
 {
     return test_core_local_ipc_concurrently(env, env->cores, false);
 }
-/* DEFINE_TEST(IPC2001, "Test SMP seL4_Signal + seL4_Wait to one notification", test_concurrent_ipc, true); */
+DEFINE_TEST(IPC2001, "Test SMP seL4_Signal + seL4_Wait to one notification", test_concurrent_ipc, true);
 
 static int
 test_concurrent_ipc_shared_endpoint(env_t env)
 {
     return test_core_local_ipc_concurrently(env, env->cores, true);
 }
-/* DEFINE_TEST(IPC2002, "Test SMP seL4_Signal + seL4_Wait to one notification", test_concurrent_ipc_shared_endpoint, true); */
+DEFINE_TEST(IPC2002, "Test SMP seL4_Signal + seL4_Wait to one notification", test_concurrent_ipc_shared_endpoint, true);
 
 static int test_signal_fastpath_notification_synchronisation_signaller_func(seL4_Word notification, seL4_Word nops, seL4_Word extra1, seL4_Word extra2)
 {
@@ -1549,14 +1549,14 @@ test_signal_wait_notification_contention(env_t env)
 {
     return test_signal_fastpath_notification_synchronisation(env, env->cores, true);
 }
-/* DEFINE_TEST(IPC2003, "Test SMP seL4_Signal + seL4_Wait to one notification", test_signal_wait_notification_contention, true); */
+DEFINE_TEST(IPC2003, "Test SMP seL4_Signal + seL4_Wait to one notification", test_signal_wait_notification_contention, true);
 
 static int
 test_signal_wait_scheduler_contention(env_t env)
 {
     return test_signal_fastpath_notification_synchronisation(env, env->cores, false);
 }
-/* DEFINE_TEST(IPC2004, "Test SMP seL4_Signal + seL4_Wait to different notifications where waiting threads have the same affinity", test_signal_wait_scheduler_contention, true); */
+DEFINE_TEST(IPC2004, "Test SMP seL4_Signal + seL4_Wait to different notifications where waiting threads have the same affinity", test_signal_wait_scheduler_contention, true);
 
 static int bound_server_fn(seL4_Word init_endpoint, seL4_Word endpoint, seL4_Word reply, seL4_Word zeroes_ptr)
 {
@@ -1685,7 +1685,7 @@ static int test_signal_vs_ipc_synchronisation(env_t env)
 
     return sel4test_get_result();
 }
-DEFINE_TEST(IPC2005, "Test SMP seL4_Signal + seL4_Wait to different notifications where waiting threads have the same affinity", test_signal_vs_ipc_synchronisation, true);
+// DEFINE_TEST(IPC2005, "Test SMP seL4_Signal + seL4_Wait to different notifications where waiting threads have the same affinity", test_signal_vs_ipc_synchronisation, true);
 
 // Passive T0 blocked on E with N bound; T1 running on C0 calling E; T2 running on C1 signalling N. This should test the synchronisation on endpoints between Signal, Call and Reply-Receive fastpaths.
 /* static int test_signal_bound_synchronisation(env_t env) */
