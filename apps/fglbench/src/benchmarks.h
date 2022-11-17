@@ -8,8 +8,8 @@
 #include "utils.h"
 
 /* Ping pong defines */
-#define WARMUPS 3
-#define ITERATIONS 1
+#define WARMUPS 10
+#define ITERATIONS 16
 #define INTERRUPT_PRIORITY 200
 #define WORKER_PRIORITY 100
 
