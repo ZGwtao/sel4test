@@ -24,7 +24,7 @@ def plot_ipc_benchmark_0():
         data = []
         for core_count in range(1, max_cores + 1):
             data.append(benchmark_data[(i, 0, core_count)])
-        plt.plot(xticks, data, label=line_names[i])
+        plt.plot(xticks, data, '-o', label=line_names[i])
 
     plt.xticks(xticks)
     plt.legend()
@@ -41,7 +41,7 @@ def plot_ipc_benchmark_1():
         data = []
         for core_count in range(1, max_cores + 1):
             data.append(benchmark_data[(i, 1, core_count)])
-        plt.plot(xticks, data, label=line_names[i])
+        plt.plot(xticks, data, '-o', label=line_names[i])
 
     plt.xticks(xticks)
     plt.legend()
@@ -58,7 +58,7 @@ def plot_ipc_benchmark_2():
         data = []
         for core_count in range(2, max_cores + 1):
             data.append(benchmark_data[(i, 2, core_count)])
-        plt.plot(xticks, data, label=line_names[i])
+        plt.plot(xticks, data, '-o', label=line_names[i])
 
     plt.xticks(xticks)
     plt.legend()
@@ -75,7 +75,7 @@ def plot_notification_benchmark_0():
         data = []
         for core_count in range(1, max_cores + 1):
             data.append(benchmark_data[(i, 3, core_count)])
-        plt.plot(xticks, data, label=line_names[i])
+        plt.plot(xticks, data, '-o', label=line_names[i])
 
     plt.xticks(xticks)
     plt.legend()
@@ -92,7 +92,7 @@ def plot_notification_benchmark_1():
         data = []
         for core_count in range(1, max_cores + 1):
             data.append(benchmark_data[(i, 4, core_count)])
-        plt.plot(xticks, data, label=line_names[i])
+        plt.plot(xticks, data, '-o', label=line_names[i])
 
     plt.xticks(xticks)
     plt.legend()
@@ -109,7 +109,7 @@ def plot_notification_benchmark_2():
         data = []
         for core_count in range(2, max_cores + 1):
             data.append(benchmark_data[(i, 5, core_count)])
-        plt.plot(xticks, data, label=line_names[i])
+        plt.plot(xticks, data, '-o', label=line_names[i])
 
     plt.xticks(xticks)
     plt.legend()
