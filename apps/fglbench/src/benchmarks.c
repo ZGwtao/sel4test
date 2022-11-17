@@ -146,7 +146,7 @@ interrupt_thread(env_t *env, void *counters_p)
         printf("%lu\n", total);
         total_all_runs += total;
     }
-    fglprintf("### Average across all runs: %d\n", total_all_runs / ITERATIONS);
+    fglprintf("### Average across all runs: %lu\n", total_all_runs / ITERATIONS);
     fglprintf("All is well in the universe\n");
     while(1);
 }
