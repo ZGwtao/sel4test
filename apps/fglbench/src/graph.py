@@ -2,11 +2,20 @@
 
 import sys
 import csv
+import matplotlib
 import matplotlib.pyplot as plt
 
 line_names = {}
 benchmark_data = {}
 max_cores = 0
+
+matplotlib.use("pgf")
+matplotlib.rcParams.update({
+    "pgf.texsystem": "pdflatex",
+    'font.family': 'sans',
+    'text.usetex': True,
+    'pgf.rcfonts': False,
+})
 
 for i in range(1, len(sys.argv), 2):
     line_id = (i - 1) // 2
@@ -23,16 +32,15 @@ def plot_ipc_benchmark_0():
     for i in range(2):
         data = []
         for core_count in range(1, max_cores + 1):
-            data.append(benchmark_data[(i, 0, core_count)])
+            data.append(benchmark_data[(i, 0, core_count)] / 1000000.0)
         plt.plot(xticks, data, '-o', label=line_names[i])
 
     plt.xticks(xticks)
     plt.legend()
     plt.ylim(0)
-    plt.title("Total IPC pingpong throughput across N cores")
     plt.xlabel('Cores')
-    plt.ylabel('IPC/s')
-    plt.savefig("ipc0.png")
+    plt.ylabel('IPC/µs')
+    plt.savefig("ipc0.pgf")
 
 def plot_ipc_benchmark_1():
     plt.clf()
@@ -40,16 +48,15 @@ def plot_ipc_benchmark_1():
     for i in range(2):
         data = []
         for core_count in range(1, max_cores + 1):
-            data.append(benchmark_data[(i, 1, core_count)])
+            data.append(benchmark_data[(i, 1, core_count)] / 1000000.0)
         plt.plot(xticks, data, '-o', label=line_names[i])
 
     plt.xticks(xticks)
     plt.legend()
     plt.ylim(0)
-    plt.title("IPC pingpong throughput of 1 core with N contender cores")
     plt.xlabel('Number of contender cores')
-    plt.ylabel('IPC/s')
-    plt.savefig("ipc1.png")
+    plt.ylabel('IPC/µs')
+    plt.savefig("ipc1.pgf")
 
 def plot_ipc_benchmark_2():
     plt.clf()
@@ -57,16 +64,15 @@ def plot_ipc_benchmark_2():
     for i in range(2):
         data = []
         for core_count in range(2, max_cores + 1):
-            data.append(benchmark_data[(i, 2, core_count)])
+            data.append(benchmark_data[(i, 2, core_count)] / 1000000.0)
         plt.plot(xticks, data, '-o', label=line_names[i])
 
     plt.xticks(xticks)
     plt.legend()
     plt.ylim(0)
-    plt.title("Total IPC pingpong throughput\nacross N cores with 1 contender core")
     plt.xlabel('Cores')
-    plt.ylabel('IPC/s')
-    plt.savefig("ipc2.png")
+    plt.ylabel('IPC/µs')
+    plt.savefig("ipc2.pgf")
 
 def plot_notification_benchmark_0():
     plt.clf()
@@ -74,16 +80,15 @@ def plot_notification_benchmark_0():
     for i in range(2):
         data = []
         for core_count in range(1, max_cores + 1):
-            data.append(benchmark_data[(i, 3, core_count)])
+            data.append(benchmark_data[(i, 3, core_count)] / 1000000.0)
         plt.plot(xticks, data, '-o', label=line_names[i])
 
     plt.xticks(xticks)
     plt.legend()
     plt.ylim(0)
-    plt.title("Total signal throughput across N cores")
     plt.xlabel('Cores')
-    plt.ylabel('Signal/s')
-    plt.savefig("ntfn0.png")
+    plt.ylabel('Signals/µs')
+    plt.savefig("ntfn0.pgf")
 
 def plot_notification_benchmark_1():
     plt.clf()
@@ -91,16 +96,15 @@ def plot_notification_benchmark_1():
     for i in range(2):
         data = []
         for core_count in range(1, max_cores + 1):
-            data.append(benchmark_data[(i, 4, core_count)])
+            data.append(benchmark_data[(i, 4, core_count)] / 1000000.0)
         plt.plot(xticks, data, '-o', label=line_names[i])
 
     plt.xticks(xticks)
     plt.legend()
     plt.ylim(0)
-    plt.title("Signal throughput\nof 1 core with N contender cores")
     plt.xlabel('Number of contender cores')
-    plt.ylabel('Signal/s')
-    plt.savefig("ntfn1.png")
+    plt.ylabel('Signals/µs')
+    plt.savefig("ntfn1.pgf")
 
 def plot_notification_benchmark_2():
     plt.clf()
@@ -108,16 +112,15 @@ def plot_notification_benchmark_2():
     for i in range(2):
         data = []
         for core_count in range(2, max_cores + 1):
-            data.append(benchmark_data[(i, 5, core_count)])
+            data.append(benchmark_data[(i, 5, core_count)] / 1000000.0)
         plt.plot(xticks, data, '-o', label=line_names[i])
 
     plt.xticks(xticks)
     plt.legend()
     plt.ylim(0)
-    plt.title("Total signal throughput\nacross N cores with 1 contender core")
     plt.xlabel('Cores')
-    plt.ylabel('Signal/s')
-    plt.savefig("ntfn2.png")
+    plt.ylabel('Signals/µs')
+    plt.savefig("ntfn2.pgf")
 
 plot_ipc_benchmark_0()
 plot_ipc_benchmark_1()

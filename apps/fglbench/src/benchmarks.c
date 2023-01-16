@@ -60,6 +60,28 @@ signal_fn(seL4_Word *argv, void *unused0, void *unused1)
 }
 
 void
+wait_fn(seL4_Word *argv, void *unused0, void *unused1)
+{
+    seL4_CPtr ntfn = argv[0];
+    volatile seL4_Word *calls_complete = (seL4_Word *)argv[1];
+    for (;;) {
+        seL4_Wait(ntfn, NULL);
+        (*calls_complete)++;
+    }
+}
+
+void
+nbwait_fn(seL4_Word *argv, void *unused0, void *unused1)
+{
+    seL4_CPtr ntfn = argv[0];
+    volatile seL4_Word *calls_complete = (seL4_Word *)argv[1];
+    for (;;) {
+        seL4_NBWait(ntfn, NULL);
+        (*calls_complete)++;
+    }
+}
+
+void
 signal_pingpong_fn(void *argv, void *unused0, void *unused1)
 {
     seL4_Word *thread_params = (seL4_Word *)argv;
@@ -105,6 +127,7 @@ interrupt_thread(env_t *env, void *counters_p)
     assert(!err);
 
     seL4_Word total_all_runs = 0;
+    double average_cycles = 0;
     fglprintf("### Run\t");
     for (int i = 0; i < CONFIG_NUM_CORES; i++) {
         printf("Core %d\t", i);
@@ -145,8 +168,10 @@ interrupt_thread(env_t *env, void *counters_p)
         }
         printf("%lu\n", total);
         total_all_runs += total;
+        average_cycles += ((double)(cycles1 - cycles0) / ((double)total / CONFIG_NUM_CORES)) / ITERATIONS;
     }
     fglprintf("### Average across all runs: %lu\n", total_all_runs / ITERATIONS);
+    fglprintf("### Average cycle cost: %lu\n", (uint64_t)average_cycles);
     fglprintf("All is well in the universe\n");
     while(1);
 }
@@ -389,6 +414,32 @@ start_signaller_thread(env_t *env, seL4_Word core, struct signal_core_state *sta
 }
 
 void
+start_signaller_waiter_thread_pair(env_t *env, seL4_Word core, struct signal_core_state *signaller_state, struct signal_core_state *waiter_state)
+{
+    sel4utils_thread_t *signaller_thread = &signaller_state->thread;
+    configure_thread(env, signaller_thread, WORKER_PRIORITY);
+    seL4_Word *signaller_params = signaller_state->params;
+    seL4_Word *signaller_calls_complete = &signaller_state->counter;
+
+    sel4utils_thread_t *waiter_thread = &waiter_state->thread;
+    configure_thread(env, waiter_thread, WORKER_PRIORITY-1);
+    seL4_Word *waiter_params = waiter_state->params;
+    seL4_Word *waiter_calls_complete = &waiter_state->counter;
+
+    seL4_CPtr ntfn = vka_alloc_notification_leaky(env->vka);
+
+    signaller_params[0] = ntfn;
+    signaller_params[1] = (seL4_Word)signaller_calls_complete;
+    waiter_params[0] = ntfn;
+    waiter_params[1] = (seL4_Word)waiter_calls_complete;
+
+    set_affinity(env, signaller_thread, 0);
+    set_affinity(env, waiter_thread, core);
+    sel4utils_start_thread(signaller_thread, (sel4utils_thread_entry_fn)signal_fn, (void *)signaller_params, NULL, 1);
+    sel4utils_start_thread(waiter_thread, (sel4utils_thread_entry_fn)wait_fn, (void *)waiter_params, NULL, 1);
+}
+
+void
 ipc_benchmark_0(env_t *env)
 {
     struct ipc_pingpong_core_state core_state[CONFIG_NUM_CORES] = {0};
@@ -506,16 +557,19 @@ void
 signal_benchmark_0(env_t *env)
 {
     struct signal_core_state core_state[CONFIG_NUM_CORES] = {0};
+    struct signal_core_state wait_core_state[CONFIG_NUM_CORES] = {0};
     seL4_Word *counters[CONFIG_NUM_CORES] = {0};
+    seL4_Word *wait_counters[CONFIG_NUM_CORES] = {0};
 
     for (int core = 0; core < CONFIG_NUM_CORES; core++) {
         counters[core] = &core_state[core].counter;
+        wait_counters[core] = &wait_core_state[core].counter;
     }
 
-    run_interrupt_thread(env, counters);
+    run_interrupt_thread(env, wait_counters);
 
-    for (seL4_Word core = 0; core < CONFIG_NUM_CORES; core++) {
-        start_signaller_thread(env, core, &core_state[core]);
+    for (seL4_Word core = 1; core < CONFIG_NUM_CORES; core++) {
+        start_signaller_waiter_thread_pair(env, core, &core_state[core], &wait_core_state[core]);
     }
 }
 
