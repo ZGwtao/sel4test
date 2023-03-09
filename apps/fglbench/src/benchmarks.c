@@ -116,7 +116,7 @@ contender_fn(seL4_Word *argv, void *unused0, void *unused1)
 void
 nopper_fn(void *unused0, void *unused1, void *unused2)
 {
-    for (;;) asm volatile ("" ::);
+    for (;;) asm volatile ("nop" ::);
 }
 
 void
@@ -250,7 +250,7 @@ run_interrupt_thread(env_t* env, seL4_Word **counters)
 
     sel4utils_thread_t *thread = calloc(1, sizeof *thread);
     configure_thread(env, thread, INTERRUPT_PRIORITY);
-    
+
     ps_irq_register_fn_t irq_register_fn_copy = env->ops.irq_ops.irq_register_fn;
     void *cookie_copy = env->ops.irq_ops.cookie;
     env->ops.irq_ops.irq_register_fn = sel4test_timer_irq_register;
@@ -299,6 +299,13 @@ struct contender_core_state {
 };
 
 struct signal_core_state {
+    sel4utils_thread_t thread;
+    seL4_Word params[2], counter;
+
+    PAD_TO_NEXT_CACHE_LN(sizeof (sel4utils_thread_t) + 3 * sizeof (seL4_Word));
+};
+
+struct nbwait_core_state {
     sel4utils_thread_t thread;
     seL4_Word params[2], counter;
 
@@ -440,6 +447,23 @@ start_signaller_waiter_thread_pair(env_t *env, seL4_Word core, struct signal_cor
 }
 
 void
+start_nbwaiter_thread(env_t *env, seL4_Word core, struct nbwait_core_state *state)
+{
+    sel4utils_thread_t *thread = &state->thread;
+    configure_thread(env, thread, WORKER_PRIORITY);
+    seL4_Word *params = state->params;
+    seL4_Word *calls_complete = &state->counter;
+
+    seL4_CPtr ntfn = vka_alloc_notification_leaky(env->vka);
+
+    params[0] = ntfn;
+    params[1] = (seL4_Word)calls_complete;
+
+    set_affinity(env, thread, core);
+    sel4utils_start_thread(thread, (sel4utils_thread_entry_fn)nbwait_fn, (void *)params, NULL, 1);
+}
+
+void
 ipc_benchmark_0(env_t *env)
 {
     struct ipc_pingpong_core_state core_state[CONFIG_NUM_CORES] = {0};
@@ -557,19 +581,16 @@ void
 signal_benchmark_0(env_t *env)
 {
     struct signal_core_state core_state[CONFIG_NUM_CORES] = {0};
-    struct signal_core_state wait_core_state[CONFIG_NUM_CORES] = {0};
     seL4_Word *counters[CONFIG_NUM_CORES] = {0};
-    seL4_Word *wait_counters[CONFIG_NUM_CORES] = {0};
 
     for (int core = 0; core < CONFIG_NUM_CORES; core++) {
         counters[core] = &core_state[core].counter;
-        wait_counters[core] = &wait_core_state[core].counter;
     }
 
-    run_interrupt_thread(env, wait_counters);
+    run_interrupt_thread(env, counters);
 
-    for (seL4_Word core = 1; core < CONFIG_NUM_CORES; core++) {
-        start_signaller_waiter_thread_pair(env, core, &core_state[core], &wait_core_state[core]);
+    for (seL4_Word core = 0; core < CONFIG_NUM_CORES; core++) {
+        start_signaller_thread(env, core, &core_state[core]);
     }
 }
 
@@ -610,5 +631,21 @@ signal_benchmark_2(env_t *env)
 
     if (CONFIG_NUM_CORES > 1) {
         start_contender_thread(env, CONFIG_NUM_CORES - 1, &contender_core_state);
+    }
+}
+
+void
+nbwait_benchmark_0(env_t *env)
+{
+    struct nbwait_core_state core_state[CONFIG_NUM_CORES] = {0};
+    seL4_Word *counters[CONFIG_NUM_CORES] = {0};
+
+    for (int core = 0; core < CONFIG_NUM_CORES; core++) {
+        counters[core] = &core_state[core].counter;
+    }
+    run_interrupt_thread(env, counters);
+
+    for (seL4_Word core = 0; core < CONFIG_NUM_CORES; core++) {
+        start_nbwaiter_thread(env, core, &core_state[core]);
     }
 }

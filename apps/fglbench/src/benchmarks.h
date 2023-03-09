@@ -22,3 +22,4 @@ void notification_benchmark_2(env_t *env);
 void signal_benchmark_0(env_t *env);
 void signal_benchmark_1(env_t *env);
 void signal_benchmark_2(env_t *env);
+void nbwait_benchmark_0(env_t *env);

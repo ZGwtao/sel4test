@@ -358,6 +358,7 @@ int wait_for_helper(helper_thread_t *thread)
 {
     seL4_Word badge;
 
+    assert(thread->local_endpoint.cptr != 0);
     api_recv(thread->local_endpoint.cptr, &badge, thread->thread.reply.cptr);
     return seL4_GetMR(0);
 }

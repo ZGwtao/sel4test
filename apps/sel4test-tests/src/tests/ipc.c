@@ -1377,23 +1377,74 @@ static int replywait_echo_func(seL4_Word init_ep, seL4_Word endpoint, seL4_CPtr 
     return SUCCESS;
 }
 
-static int call_fastpath_func(seL4_Word endpoint, seL4_Word seed, seL4_Word reply, seL4_Word core)
+static int replywait_echo_func_active(seL4_Word endpoint, seL4_CPtr reply, seL4_Word arg2, seL4_Word arg3)
 {
-    test_result_t result = SUCCESS;
-    for (int i = 0; i < 100000; i++) {
-        seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 0);
-        tag = seL4_Call(endpoint, tag);
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 0);
+    for (;;) {
+        tag = seL4_ReplyRecv(endpoint, tag, NULL, reply);
     }
 
-    return result;
+    return SUCCESS;
 }
 
-static int test_core_local_ipc_concurrently(env_t env, seL4_Word nr_cores, bool shared_endpoint)
+static int client_func(seL4_Word ep_ppc, seL4_Word arg1, seL4_Word arg2, seL4_Word arg3)
+{
+    for (seL4_Word i = 0; i < 1000000; i++) {
+        seL4_Call(ep_ppc, seL4_MessageInfo_new(0, 0, 0, 0));
+    }
+
+    return SUCCESS;
+}
+
+static int server_func(seL4_Word ep_init, seL4_Word ep_ppc, seL4_CPtr reply, seL4_Word arg3)
+{
+    seL4_NBSendRecv(ep_init, seL4_MessageInfo_new(0, 0, 0, 0), ep_ppc, NULL, reply);
+    for (;;) {
+        seL4_ReplyRecv(ep_ppc, seL4_MessageInfo_new(0, 0, 0, 0), NULL, reply);
+    }
+
+    return SUCCESS;
+}
+
+static int weird_passive_server_test(env_t env)
+{
+    seL4_Word nr_clients = 2;
+    assert(nr_clients <= env->cores);
+
+    helper_thread_t server = {0};
+    helper_thread_t client[2] = {0};
+    seL4_CPtr ep_init = vka_alloc_endpoint_leaky(&env->vka);
+    seL4_CPtr ep_ppc = vka_alloc_endpoint_leaky(&env->vka);
+    seL4_CPtr reply = vka_alloc_reply_leaky(&env->vka);
+
+    create_passive_thread(env, &server, server_func, ep_init, ep_ppc, reply, 0);
+
+    seL4_DebugNameThread(server.thread.tcb.cptr, "S");
+
+    for (int i = 0; i < nr_clients; i++) {
+        create_helper_thread(env, &client[i]);
+        seL4_DebugNameThread(client[i].thread.tcb.cptr, i == 0 ? "C1" : "C2");
+        set_helper_affinity(env, &client[i], 1+i);
+        start_helper(env, &client[i], (helper_fn_t) client_func, ep_ppc, 0, 0, 0);
+    }
+
+    for (int i = 0; i < nr_clients; i++) {
+        test_result_t res = wait_for_helper(&client[i]);
+        test_eq(res, SUCCESS);
+    }
+    return sel4test_get_result();
+}
+
+static int test_core_local_ipc_concurrently(env_t env, seL4_Word nr_cores, bool shared_endpoint, bool single_server, bool passive_servers)
 {
     const int MAX_CORES = 16;
-    assert(nr_cores <= MAX_CORES);
+    assert(env->cores <= MAX_CORES);
 
     vka_t *vka = &env->vka;
+
+    if (single_server) {
+        shared_endpoint = true;
+    }
 
     helper_thread_t client[MAX_CORES];
     helper_thread_t server[MAX_CORES];
@@ -1401,63 +1452,97 @@ static int test_core_local_ipc_concurrently(env_t env, seL4_Word nr_cores, bool 
     seL4_CPtr endpoints[MAX_CORES];
     seL4_CPtr reply[MAX_CORES];
 
+    printf("creating endpoints\n");
+
     init_ep = vka_alloc_endpoint_leaky(vka);
-    if (shared_endpoint) {
-        endpoints[0] = vka_alloc_endpoint_leaky(vka);
+    endpoints[0] = vka_alloc_endpoint_leaky(vka);
+    for (int core = 1; core < env->cores; core++) {
+        if (shared_endpoint) {
+            endpoints[core] = endpoints[0];
+        } else {
+            endpoints[core] = vka_alloc_endpoint_leaky(vka);
+        }
     }
 
-    seL4_Word start_number = 0xabbacafe;
-    for (int core = 0; core < nr_cores; core++) {
-        seL4_CPtr ep;
-        if (shared_endpoint) {
-            ep = endpoints[0];
-        } else {
-            ep = endpoints[core] = vka_alloc_endpoint_leaky(vka);
-        }
+    printf("starting servers\n");
 
+    for (int core = 0; core < env->cores; core++) {
+        if (single_server && core > 0)
+            break;
+        create_helper_thread(env, &server[core]);
         reply[core] = vka_alloc_reply_leaky(vka);
-        create_passive_thread(env, &server[core], replywait_echo_func, init_ep, ep, reply[core], 0);
+        if (passive_servers) {
+            start_passive_thread(env, &server[core], replywait_echo_func, init_ep, endpoints[core], reply[core], 0);
+        } else {
+            set_helper_affinity(env, &server[core], core);
+            start_helper(env, &server[core], (helper_fn_t) replywait_echo_func_active, endpoints[core], reply[core], 0, 0);
+        }
+    }
 
+    printf("starting clients\n");
+
+    seL4_Word start_number = 0xabbacafe;
+    for (int core = 0; core < env->cores; core++) {
+        printf("creating client thread %d\n", core);
         create_helper_thread(env, &client[core]);
+        printf("setting client %d affinity\n", core);
         set_helper_affinity(env, &client[core], core);
-        start_helper(env, &client[core], (helper_fn_t) call_fastpath_func, ep, start_number, 0, core);
+        printf("starting client %d\n", core);
+        start_helper(env, &client[core], (helper_fn_t) client_func, endpoints[core], start_number, 0, core);
         start_number += 0x71717171;
     }
 
-    for (int core = 0; core < nr_cores; core++) {
+    for (int core = 0; core < env->cores; core++) {
+        printf("waiting for core %d\n", core);
         test_result_t res = wait_for_helper(&client[core]);
+        printf("got core %d\n", core);
         test_eq(res, SUCCESS);
-        cleanup_helper(env, &client[core]);
-        if (core == 0)
-            cleanup_helper(env, &server[core]);
-        if (!shared_endpoint) {
-            int error = cnode_delete(env, endpoints[core]);
-            test_error_eq(error, seL4_NoError);
-        }
     }
-    if (shared_endpoint) {
-        int error = cnode_delete(env, endpoints[0]);
-        test_error_eq(error, seL4_NoError);
-    }
-    int error = cnode_delete(env, init_ep);
-    test_error_eq(error, seL4_NoError);
 
     return sel4test_get_result();
 }
 
 static int
-test_concurrent_ipc(env_t env)
+test_concurrent_ipc_single_active(env_t env)
 {
-    return test_core_local_ipc_concurrently(env, env->cores, false);
+    return weird_passive_server_test(env);
 }
-DEFINE_TEST(IPC2001, "Test SMP seL4_Signal + seL4_Wait to one notification", test_concurrent_ipc, true);
+DEFINE_TEST(IPC2001, "Test SMP concurrent IPC to single active server", test_concurrent_ipc_single_active, true);
 
 static int
-test_concurrent_ipc_shared_endpoint(env_t env)
+test_concurrent_ipc_multiple_active_exclusive_endpoints(env_t env)
 {
-    return test_core_local_ipc_concurrently(env, env->cores, true);
+    return test_core_local_ipc_concurrently(env, env->cores, false, false, false);
 }
-DEFINE_TEST(IPC2002, "Test SMP seL4_Signal + seL4_Wait to one notification", test_concurrent_ipc_shared_endpoint, true);
+DEFINE_TEST(IPC2002, "Test SMP concurrent IPC to active servers, exclusive endpoints", test_concurrent_ipc_multiple_active_exclusive_endpoints, true);
+
+static int
+test_concurrent_ipc_multiple_active_shared_endpoints(env_t env)
+{
+    return test_core_local_ipc_concurrently(env, env->cores, true, false, false);
+}
+DEFINE_TEST(IPC2003, "Test SMP concurrent IPC to active servers, shared endpoint", test_concurrent_ipc_multiple_active_shared_endpoints, true);
+
+static int
+test_concurrent_ipc_single_passive(env_t env)
+{
+    return test_core_local_ipc_concurrently(env, env->cores, false, true, true);
+}
+DEFINE_TEST(IPC2004, "Test SMP concurrent IPC to single passive server", test_concurrent_ipc_single_passive, true);
+
+static int
+test_concurrent_ipc_multiple_passive_exclusive_endpoints(env_t env)
+{
+    return test_core_local_ipc_concurrently(env, env->cores, false, false, true);
+}
+DEFINE_TEST(IPC2005, "Test SMP concurrent IPC to passive servers, exclusive endpoints", test_concurrent_ipc_multiple_passive_exclusive_endpoints, true);
+
+static int
+test_concurrent_ipc_multiple_passive_shared_endpoints(env_t env)
+{
+    return test_core_local_ipc_concurrently(env, env->cores, true, false, true);
+}
+DEFINE_TEST(IPC2006, "Test SMP concurrent IPC to passive servers, shared endpoints", test_concurrent_ipc_multiple_passive_shared_endpoints, true);
 
 static int test_signal_fastpath_notification_synchronisation_signaller_func(seL4_Word notification, seL4_Word nops, seL4_Word extra1, seL4_Word extra2)
 {
@@ -1549,26 +1634,20 @@ test_signal_wait_notification_contention(env_t env)
 {
     return test_signal_fastpath_notification_synchronisation(env, env->cores, true);
 }
-DEFINE_TEST(IPC2003, "Test SMP seL4_Signal + seL4_Wait to one notification", test_signal_wait_notification_contention, true);
+DEFINE_TEST(IPC2007, "Test SMP seL4_Signal + seL4_Wait to one notification", test_signal_wait_notification_contention, true);
 
 static int
 test_signal_wait_scheduler_contention(env_t env)
 {
     return test_signal_fastpath_notification_synchronisation(env, env->cores, false);
 }
-DEFINE_TEST(IPC2004, "Test SMP seL4_Signal + seL4_Wait to different notifications where waiting threads have the same affinity", test_signal_wait_scheduler_contention, true);
+DEFINE_TEST(IPC2008, "Test SMP seL4_Signal + seL4_Wait to different notifications where waiting threads have the same affinity", test_signal_wait_scheduler_contention, true);
 
-static int bound_server_fn(seL4_Word init_endpoint, seL4_Word endpoint, seL4_Word reply, seL4_Word zeroes_ptr)
+static int bound_server_fn(seL4_Word init_endpoint, seL4_Word endpoint, seL4_Word reply, seL4_Word arg3)
 {
-    seL4_Word *zeroes = (seL4_Word *)zeroes_ptr;
-    seL4_Word *ones = zeroes + 1;
-    seL4_MessageInfo_t tag;
-    tag = seL4_NBSendRecv(init_endpoint, seL4_MessageInfo_new(0, 0, 0, 0), endpoint, NULL, reply);
-    for (int i = 0; ; i++) {
-        /* printf("r\n"); */
-        tag = seL4_ReplyRecv(endpoint, seL4_MessageInfo_new(0, 0, 0, 0), NULL, reply);
-        /* printf("R\n"); */
-        if (seL4_MessageInfo_get_length(tag) == 0) (*zeroes)++; else (*ones)++;
+    seL4_NBSendRecv(init_endpoint, seL4_MessageInfo_new(0, 0, 0, 0), endpoint, NULL, reply);
+    while (true) {
+        seL4_ReplyRecv(endpoint, seL4_MessageInfo_new(0, 0, 0, 0), NULL, reply);
     }
 
     return SUCCESS;
@@ -1577,9 +1656,7 @@ static int bound_server_fn(seL4_Word init_endpoint, seL4_Word endpoint, seL4_Wor
 static int caller_fn_2(seL4_Word endpoint, seL4_Word extra_0, seL4_Word extra_1, seL4_Word extra_2)
 {
     for (int i = 0; i < 100000; i++) {
-        /* printf("c\n"); */
-        seL4_Call(endpoint, seL4_MessageInfo_new(0, 0, 0, 1));
-        /* printf("C\n"); */
+        seL4_Call(endpoint, seL4_MessageInfo_new(0, 0, 0, 0));
     }
     return SUCCESS;
 }
@@ -1587,25 +1664,9 @@ static int caller_fn_2(seL4_Word endpoint, seL4_Word extra_0, seL4_Word extra_1,
 static int signaller_fn_2(seL4_Word notification, seL4_Word extra_0, seL4_Word extra_1, seL4_Word extra_2)
 {
     for (int i = 0; i < 100000; i++) {
-        for (int j = 0; j < 1000; j++) asm volatile ("nop" ::);
         seL4_Signal(notification);
     }
-    for (;;) asm volatile ("nop" ::);
     return SUCCESS;
-}
-
-static int nop_fn(seL4_Word arg_0, seL4_Word arg_1, seL4_Word arg_2, seL4_Word arg_3)
-{
-    for (;;) asm volatile ("nop" ::);
-}
-
-static int fault_handler_fn(seL4_Word endpoint, seL4_Word env_endpoint, seL4_Word arg_2, seL4_Word arg_3)
-{
-    for (;;) {
-        seL4_MessageInfo_t tag = seL4_Wait(endpoint, NULL);
-        printf("Got fault\n");
-        seL4_Send(env_endpoint, tag);
-    }
 }
 
 // T0 blocked on E with N bound; T1 running on C0 calling E; T2 running on C1 signalling N. This should test the synchronisation on endpoints between Signal, Call and Reply-Receive fastpaths.
@@ -1617,63 +1678,27 @@ static int test_signal_vs_ipc_synchronisation(env_t env)
     UNUSED int error;
     vka_t *vka = &env->vka;
 
-    helper_thread_t server, caller, signaller, nopper, fault_handler;
-    seL4_CPtr init_endpoint, endpoint, notification, reply, fault_endpoint;
+    helper_thread_t server, caller, signaller;
+    seL4_CPtr init_endpoint, endpoint, notification, reply;
 
-    create_helper_thread(env, &fault_handler);
-    create_helper_thread_custom_stack(env, &server, BYTES_TO_4K_PAGES(CONFIG_SEL4UTILS_STACK_SIZE));
-    create_helper_thread_custom_stack(env, &nopper, BYTES_TO_4K_PAGES(CONFIG_SEL4UTILS_STACK_SIZE));
-    create_helper_thread_custom_stack(env, &caller, BYTES_TO_4K_PAGES(CONFIG_SEL4UTILS_STACK_SIZE));
-    create_helper_thread_custom_stack(env, &signaller, BYTES_TO_4K_PAGES(CONFIG_SEL4UTILS_STACK_SIZE));
-
-    /* server.fault_endpoint = fault_endpoint; */
-    /* nopper.fault_endpoint = fault_endpoint; */
-    /* caller.fault_endpoint = fault_endpoint; */
-    /* signaller.fault_endpoint = fault_endpoint; */
-
-    /* error = vka_alloc_endpoint(vka, &server->local_endpoint); */
-    /* assert(error == 0); */
-    /* thread->is_process = false; */
-    /* thread->fault_endpoint = env->endpoint; */
-    /* seL4_Word data = api_make_guard_skip_word(seL4_WordBits - env->cspace_size_bits); */
-    /* sel4utils_thread_config_t config = thread_config_default(&env->simple, env->cspace_root, data, env->endpoint, OUR_PRIO - 1); */
-    /* config = thread_config_stack_size(config, stack_pages); */
-    /* error = sel4utils_configure_thread_config(&env->vka, &env->vspace, &env->vspace, */
-    /*                                           config, &thread->thread); */
-    /* assert(error == 0); */
+    create_helper_thread(env, &server);
+    create_helper_thread(env, &caller);
+    create_helper_thread(env, &signaller);
 
     init_endpoint = vka_alloc_endpoint_leaky(vka);
     endpoint = vka_alloc_endpoint_leaky(vka);
     notification = vka_alloc_notification_leaky(vka);
     reply = vka_alloc_reply_leaky(vka);
-    fault_endpoint = vka_alloc_endpoint_leaky(vka);
 
     seL4_TCB_BindNotification(get_helper_tcb(&server), notification);
 
     seL4_Word zeroes_ones[2] = {0};
 
-    set_helper_affinity(env, &server, 1);
-    /* set_helper_affinity(env, &nopper, 1); */
-    set_helper_affinity(env, &caller, 2);
-    set_helper_affinity(env, &signaller, 3);
-
-    set_helper_priority(env, &fault_handler, 254);
-    set_helper_priority(env, &server, 254);
-    /* set_helper_priority(env, &nopper, 102); */
-    set_helper_priority(env, &caller, 254);
-    set_helper_priority(env, &signaller, 254);
-
-    seL4_Word timeslice = CONFIG_BOOT_THREAD_TIME_SLICE * 10;
-    error = seL4_SchedControl_Configure(simple_get_sched_ctrl(&env->simple, 1), get_helper_sched_context(&server), timeslice, timeslice, 0, 0);
-    assert(!error);
-    /* error = seL4_SchedControl_Configure(simple_get_sched_ctrl(&env->simple, 1), get_helper_sched_context(&nopper), timeslice, timeslice, 0, 0); */
-    /* assert(!error); */
-
-    /* start_helper(env, &fault_handler, fault_handler_fn, fault_endpoint, env->endpoint, 0, 0); */
+    set_helper_affinity(env, &caller, 1);
+    set_helper_affinity(env, &signaller, 2);
 
     start_passive_thread(env, &server, bound_server_fn, init_endpoint, endpoint, reply, (seL4_Word)zeroes_ones);
     seL4_SchedContext_Bind(server.thread.sched_context.cptr, notification);
-    /* start_helper(env, &nopper, nop_fn, 0, 0, 0, 0); */
 
     start_helper(env, &caller, caller_fn_2, endpoint, 0, 0, 0);
     start_helper(env, &signaller, signaller_fn_2, notification, 0, 0, 0);
@@ -1685,45 +1710,4 @@ static int test_signal_vs_ipc_synchronisation(env_t env)
 
     return sel4test_get_result();
 }
-// DEFINE_TEST(IPC2005, "Test SMP seL4_Signal + seL4_Wait to different notifications where waiting threads have the same affinity", test_signal_vs_ipc_synchronisation, true);
-
-// Passive T0 blocked on E with N bound; T1 running on C0 calling E; T2 running on C1 signalling N. This should test the synchronisation on endpoints between Signal, Call and Reply-Receive fastpaths.
-/* static int test_signal_bound_synchronisation(env_t env) */
-/* { */
-/*     const int MAX_CORES = 16; */
-/*     const int nr_cores = env->cores; */
-/*     assert(nr_cores <= MAX_CORES); */
-/*     vka_t *vka = &env->vka; */
-
-/*     helper_thread_t server, signaller[2]; */
-/*     seL4_CPtr init_endpoint, endpoint, notification, reply; */
-
-/*     create_helper_thread(env, &server); */
-/*     create_helper_thread(env, &signaller[0]); */
-/*     create_helper_thread(env, &signaller[1]); */
-/*     init_endpoint = vka_alloc_endpoint_leaky(vka); */
-/*     endpoint = vka_alloc_endpoint_leaky(vka); */
-/*     notification = vka_alloc_notification_leaky(vka); */
-/*     reply = vka_alloc_reply_leaky(vka); */
-
-/*     seL4_Time timeslice = CONFIG_BOOT_THREAD_TIME_SLICE * US_IN_S; */
-/*     int error = seL4_SchedControl_Configure(simple_get_sched_ctrl(&env->simple, 3), */
-/*                                             server.thread.sched_context.cptr, */
-/*                                             timeslice, timeslice, 0, 0); */
-/*     start_passive_thread(env, &server, bound_passive_server_fn, init_endpoint, endpoint, notification, reply); */
-/*     seL4_SchedContext_Bind(server.thread.sched_context.cptr, notification); */
-/*     seL4_TCB_BindNotification(server.thread.tcb.cptr, notification); */
-/*     set_helper_affinity(env, &signaller[0], 1); */
-/*     set_helper_affinity(env, &signaller[1], 2); */
-/*     set_helper_priority(env, &server, 0); */
-/*     set_helper_priority(env, &signaller[0], 101); */
-/*     set_helper_priority(env, &signaller[1], 101); */
-/*     start_helper(env, &signaller[0], signaller_fn_2, notification, 0, 0, 0); */
-/*     start_helper(env, &signaller[1], signaller_fn_2, notification, 0, 0, 0); */
-
-/*     wait_for_helper(&signaller[0]); */
-/*     wait_for_helper(&signaller[1]); */
-
-/*     return sel4test_get_result(); */
-/* } */
-/* DEFINE_TEST(IPC2006, "Test SMP seL4_Signal + seL4_Wait to different notifications where waiting threads have the same affinity", test_signal_bound_synchronisation, true); */
+DEFINE_TEST(IPC2009, "Test SMP seL4_Signal + seL4_Wait to different notifications where waiting threads have the same affinity", test_signal_vs_ipc_synchronisation, true);

@@ -75,6 +75,7 @@ main_continued(void *arg)
         signal_benchmark_0,
         signal_benchmark_1,
         signal_benchmark_2,
+        nbwait_benchmark_0,
     };
     fglprintf("Running benchmark %d on %d cores\n", CONFIG_WHICH_BENCHMARK, CONFIG_NUM_CORES);
     benchmarks[CONFIG_WHICH_BENCHMARK](&env_global);
