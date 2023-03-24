@@ -1419,11 +1419,8 @@ static int weird_passive_server_test(env_t env)
 
     create_passive_thread(env, &server, server_func, ep_init, ep_ppc, reply, 0);
 
-    seL4_DebugNameThread(server.thread.tcb.cptr, "S");
-
     for (int i = 0; i < nr_clients; i++) {
         create_helper_thread(env, &client[i]);
-        seL4_DebugNameThread(client[i].thread.tcb.cptr, i == 0 ? "C1" : "C2");
         set_helper_affinity(env, &client[i], 1+i);
         start_helper(env, &client[i], (helper_fn_t) client_func, ep_ppc, 0, 0, 0);
     }
