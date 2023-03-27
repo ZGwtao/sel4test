@@ -105,12 +105,94 @@ signal_pingpong_fn(void *argv, void *unused0, void *unused1)
 }
 
 void
+configure_thread(env_t *env, sel4utils_thread_t *thread, uint8_t prio)
+{
+    int err;
+
+    cspacepath_t cspace_cspath;
+    vka_cspace_make_path(env->vka, 0, &cspace_cspath);
+    sel4utils_thread_config_t config = thread_config_default(env->simple, cspace_cspath.root, seL4_NilData, 0, prio);
+    err = sel4utils_configure_thread_config(env->vka, env->vspace, env->vspace, config, thread);
+    assert(!err);
+}
+
+void set_affinity(env_t *env, sel4utils_thread_t *thread, seL4_Word affinity) {
+    seL4_Time timeslice = CONFIG_BOOT_THREAD_TIME_SLICE * US_IN_MS;
+    seL4_CPtr sched_control = simple_get_sched_ctrl(env->simple, affinity);
+    assert(sched_control != seL4_CapNull);
+    int err = seL4_SchedControl_Configure(sched_control, thread->sched_context.cptr, timeslice, timeslice, 0, 0);
+    assert(!err);
+}
+
+#define CONTENDER_COPY_REGISTERS 1
+
+struct contender_core_state {
+    sel4utils_thread_t thread;
+    seL4_CPtr thread_params[3];
+
+    PAD_TO_NEXT_CACHE_LN(sizeof (sel4utils_thread_t));
+};
+
+void
 contender_fn(seL4_Word *argv, void *unused0, void *unused1)
 {
-    seL4_CPtr ntfn = (seL4_CPtr)argv;
-    for (;;) {
-        seL4_NBWait(ntfn, NULL);
-    }
+    seL4_CPtr *thread_params = (seL4_CPtr *)argv;
+#if defined(CONTENDER_NULL)
+    for (;;) seL4_BenchmarkNullSyscall();
+#elif defined(CONTENDER_NBWAIT)
+    seL4_CPtr ntfn = thread_params[0];
+    for (;;) seL4_NBWait(ntfn, NULL);
+#elif defined(CONTENDER_NBSEND_CAP)
+    seL4_CPtr ep = thread_params[0];
+    for (;;) seL4_NBSend(ep, seL4_MessageInfo_new(0, 0, 1, 0));
+#elif defined(CONTENDER_NBSEND_NOCAP)
+    seL4_CPtr ep = thread_params[0];
+    for (;;) seL4_NBSend(ep, seL4_MessageInfo_new(0, 0, 0, 0));
+#elif defined(CONTENDER_SETPRIO)
+    seL4_CPtr tcb = thread_params[0];
+    for (;;) seL4_TCB_SetPriority(tcb, tcb, 1);
+#elif defined(CONTENDER_SET_TIMEOUT_EP)
+    seL4_CPtr tcb = thread_params[0];
+    for (;;) seL4_TCB_SetTimeoutEndpoint(tcb, 0);
+#elif defined(CONTENDER_COPY_REGISTERS)
+    seL4_CPtr src_tcb = thread_params[0];
+    seL4_CPtr dest_tcb = thread_params[1];
+    for (;;) seL4_TCB_CopyRegisters(src_tcb, dest_tcb, false, false, true, true, 0);
+#endif
+}
+
+void start_contender_thread(env_t *env, seL4_Word core, struct contender_core_state *state)
+{
+    sel4utils_thread_t *thread = &state->thread;
+    configure_thread(env, thread, WORKER_PRIORITY);
+
+    seL4_CPtr *thread_params = state->thread_params;
+
+#if defined(CONTENDER_NULL)
+#elif defined(CONTENDER_NBWAIT)
+    thread_params[0] = vka_alloc_notification_leaky(env->vka);
+#elif defined(CONTENDER_NBSEND_CAP)
+    thread_params[0] = vka_alloc_endpoint_leaky(env->vka);
+#elif defined(CONTENDER_NBSEND_NOCAP)
+    thread_params[0] = vka_alloc_endpoint_leaky(env->vka);
+#elif defined(CONTENDER_SETPRIO)
+    sel4utils_thread_t dummy_tcb;
+    configure_thread(env, &dummy_tcb, 1);
+    thread_params[0] = dummy_tcb.tcb.cptr;
+#elif defined(CONTENDER_SET_TIMEOUT_EP)
+    sel4utils_thread_t dummy_tcb;
+    configure_thread(env, &dummy_tcb, 1);
+    thread_params[0] = dummy_tcb.tcb.cptr;
+#elif defined(CONTENDER_COPY_REGISTERS)
+    sel4utils_thread_t src_tcb, dest_tcb;
+    configure_thread(env, &src_tcb, 1);
+    configure_thread(env, &dest_tcb, 1);
+    thread_params[0] = src_tcb.tcb.cptr;
+    thread_params[1] = dest_tcb.tcb.cptr;
+#endif
+
+    set_affinity(env, thread, core);
+    sel4utils_start_thread(thread, (sel4utils_thread_entry_fn)contender_fn, (void *)thread_params, NULL, 1);
 }
 
 void
