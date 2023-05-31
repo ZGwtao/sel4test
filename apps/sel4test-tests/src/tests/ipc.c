@@ -1568,8 +1568,6 @@ static int test_signal_fastpath_notification_synchronisation(env_t env, seL4_Wor
     const int nr_signallers = 2;
     const int nr_notifications = shared_notification ? 1 : 2;
 
-    sel4bench_init();
-
     helper_thread_t *signallers = calloc(nr_cores, sizeof *signallers);
     helper_thread_t *waiters = calloc(nr_waiters, sizeof *waiters);
     assert(waiters);
