@@ -69,13 +69,18 @@ main_continued(void *arg)
 {
     typedef void (*benchmark_t)(env_t *);
     benchmark_t benchmarks[] = {
-        ipc_benchmark_0,
-        ipc_benchmark_1,
-        ipc_benchmark_2,
-        signal_benchmark_0,
-        signal_benchmark_1,
-        signal_benchmark_2,
-        nbwait_benchmark_0,
+        bm_ipc_tp,
+        bm_ipc_tp_nc,
+        bm_ipc_tp_1c,
+        bm_ipc_max_nc,
+        bm_signal_tp,
+        bm_signal_tp_nc,
+        bm_signal_tp_1c,
+        bm_nbwait_tp,
+        bm_nbsend_tp,
+        bm_send_and_recv_tp,
+        bm_signal_and_wait_tp,
+        bm_nbsendrecv_tp,
     };
     fglprintf("Running benchmark %d on %d cores\n", CONFIG_WHICH_BENCHMARK, CONFIG_NUM_CORES);
     benchmarks[CONFIG_WHICH_BENCHMARK](&env_global);
@@ -89,8 +94,6 @@ int
 main(void)
 {
     sel4bench_init();
-
-    // for (;;) seL4_BenchmarkNullSyscall();
 
     env_global.vspace = &vspace_global;
     env_global.simple = &simple_global;

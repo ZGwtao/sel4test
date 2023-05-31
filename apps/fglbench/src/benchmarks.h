@@ -10,16 +10,22 @@
 /* Ping pong defines */
 #define WARMUPS 1
 #define ITERATIONS 1
+#define MAX_ET_RUNTIME_MINS 20
 #define INTERRUPT_PRIORITY 200
 #define WORKER_PRIORITY 100
 
-void ipc_benchmark_0(env_t *env);
-void ipc_benchmark_1(env_t *env);
-void ipc_benchmark_2(env_t *env);
-void notification_benchmark_0(env_t *env);
-void notification_benchmark_1(env_t *env);
-void notification_benchmark_2(env_t *env);
-void signal_benchmark_0(env_t *env);
-void signal_benchmark_1(env_t *env);
-void signal_benchmark_2(env_t *env);
-void nbwait_benchmark_0(env_t *env);
+void bm_ipc_tp(env_t *env);
+void bm_ipc_tp_nc(env_t *env);
+void bm_ipc_tp_1c(env_t *env);
+void bm_ipc_max_nc(env_t *env);
+void bm_ntfn_tp(env_t *env);
+void bm_ntfn_tp_nc(env_t *env);
+void bm_ntfn_tp_1c(env_t *env);
+void bm_signal_tp(env_t *env);
+void bm_signal_tp_nc(env_t *env);
+void bm_signal_tp_1c(env_t *env);
+void bm_nbwait_tp(env_t *env);
+void bm_nbsend_tp(env_t *env);
+void bm_send_and_recv_tp(env_t *env);
+void bm_signal_and_wait_tp(env_t *env);
+void bm_nbsendrecv_tp(env_t *env);
