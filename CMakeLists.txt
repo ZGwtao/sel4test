@@ -16,7 +16,7 @@ find_package(elfloader-tool REQUIRED)
 # Set the roottask CNode size to be large enough for DTB, timer caps, etc
 # Note that this works for the platforms that we have at the moment, and may
 # need to be increased in the future
-set(KernelRootCNodeSizeBits 13 CACHE INTERNAL "")
+set(KernelRootCNodeSizeBits 16 CACHE INTERNAL "")
 
 # Set our custom domain schedule
 set(KernelDomainSchedule "${CMAKE_CURRENT_LIST_DIR}/domain_schedule.c" CACHE INTERNAL "")
