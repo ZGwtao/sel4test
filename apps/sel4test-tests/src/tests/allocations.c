@@ -15,6 +15,7 @@
 #include <sel4/sel4.h>
 #include <vka/object.h>
 #include <sel4/benchmark_utilisation_types.h>
+#include <sel4/benchmark_tracepoints_types.h>
 
 #include "../helpers.h"
 
@@ -42,7 +43,7 @@ static size_t test_benchmark_cycle_cnt(env_t env, size_t (*func)(vka_t *vka))
     seL4_BenchmarkFinalizeLog();
     seL4_BenchmarkGetThreadUtilisation(simple_get_tcb(&env->simple));
     printf("\n---------- Utilisation ----------\n");
-    printf("\nCPU cycles spent: %ld\n", ipcbuffer[BENCHMARK_TCB_UTILISATION]);
+    printf("\nCPU cycles spent: %llu\n", ipcbuffer[BENCHMARK_TCB_UTILISATION]);
     printf("\n=========== Benchmark ===========\n");
     return r;
 }
@@ -116,7 +117,7 @@ static size_t test_collect_untypeds(vka_t *vka, int bot)
         free(head);
         head = curr;
     }
-    printf("\n >> Total Frame count: %ld * 4K Pages\n\n", frame_cnt);
+    printf("\n >> Total Frame count: %d * 4K Pages\n\n", frame_cnt);
     return frame_cnt;
 }
 
@@ -139,7 +140,7 @@ static int test_frame_allocation_single(env_t env)
 #ifdef CONFIG_KERNEL_BENCHMARK
     printf("\n*********** Benchmark ***********\n\n");
     uint64_t *ipcbuffer = (uint64_t *)&(seL4_GetIPCBuffer()->msg[0]);
-    seL4_BenchmarkResetThreadUtilisation(simple_get_tcb(&env->simple));
+    seL4_BenchmarkResetThreadUtilisation(env->tcb);
     seL4_BenchmarkResetLog();
 #endif
     while (cnt < frame_cnt) {
@@ -152,11 +153,12 @@ static int test_frame_allocation_single(env_t env)
     }
 #ifdef CONFIG_KERNEL_BENCHMARK
     seL4_BenchmarkFinalizeLog();
-    seL4_BenchmarkGetThreadUtilisation(simple_get_tcb(&env->simple));
+    seL4_BenchmarkGetThreadUtilisation(env->tcb);
     printf("\n---------- Utilisation ----------\n");
-    printf("\nAverage cycles per alloc: %ld, cnt: %ld\n", ipcbuffer[BENCHMARK_TCB_UTILISATION] / cnt, cnt);
-    printf("\nCPU cycles spent: %ld\n\n", ipcbuffer[BENCHMARK_TCB_UTILISATION]);
+    printf("\nAverage cycles per alloc: %llu, cnt: %d\n", ipcbuffer[BENCHMARK_TOTAL_UTILISATION] / (uint64_t)cnt, cnt);
+    printf("\nCPU cycles spent: %llu\n\n", ipcbuffer[BENCHMARK_TOTAL_UTILISATION]);
     printf("\n=========== Benchmark ===========\n\n");
+    seL4_BenchmarkDumpAllThreadsUtilisation();
 #endif
     return sel4test_get_result();
 }
@@ -233,8 +235,8 @@ static int test_frame_allocation_contiguous(env_t env)
     seL4_BenchmarkFinalizeLog();
     seL4_BenchmarkGetThreadUtilisation(simple_get_tcb(&env->simple));
     printf("\n---------- Utilisation ----------\n");
-    printf("\nAverage cycles per alloc: %ld, cnt: %ld\n", ipcbuffer[BENCHMARK_TCB_UTILISATION] / cnt, cnt);
-    printf("\nCPU cycles spent: %ld\n\n", ipcbuffer[BENCHMARK_TCB_UTILISATION]);
+    printf("\nAverage cycles per alloc: %llu, cnt: %d\n", ipcbuffer[BENCHMARK_TCB_UTILISATION] / (uint64_t)cnt, cnt);
+    printf("\nCPU cycles spent: %llu\n\n", ipcbuffer[BENCHMARK_TCB_UTILISATION]);
     printf("\n=========== Benchmark ===========\n\n");
 #endif
     return sel4test_get_result();
@@ -307,8 +309,8 @@ static int test_frame_deallocation_single(env_t env)
     seL4_BenchmarkFinalizeLog();
     seL4_BenchmarkGetThreadUtilisation(simple_get_tcb(&env->simple));
     printf("\n---------- Utilisation ----------\n");
-    printf("\nAverage cycles per dealloc: %ld, cnt: %ld\n", ipcbuffer[BENCHMARK_TCB_UTILISATION] / cnt, cnt);
-    printf("\nCPU cycles spent: %ld\n\n", ipcbuffer[BENCHMARK_TCB_UTILISATION]);
+    printf("\nAverage cycles per dealloc: %llu, cnt: %d\n", ipcbuffer[BENCHMARK_TCB_UTILISATION] / (uint64_t)cnt, cnt);
+    printf("\nCPU cycles spent: %llu\n\n", ipcbuffer[BENCHMARK_TCB_UTILISATION]);
     printf("\n=========== Benchmark ===========\n\n");
 #endif
     return sel4test_get_result();
@@ -488,8 +490,8 @@ static int test_frame_deallocation_contiguous(env_t env)
     seL4_BenchmarkFinalizeLog();
     seL4_BenchmarkGetThreadUtilisation(simple_get_tcb(&env->simple));
     printf("\n---------- Utilisation ----------\n");
-    printf("\nAverage cycles per dealloc: %ld, cnt: %ld\n", ipcbuffer[BENCHMARK_TCB_UTILISATION] / cnt, cnt);
-    printf("\nCPU cycles spent: %ld\n\n", ipcbuffer[BENCHMARK_TCB_UTILISATION]);
+    printf("\nAverage cycles per dealloc: %llu, cnt: %d\n", ipcbuffer[BENCHMARK_TCB_UTILISATION] / (uint64_t)cnt, cnt);
+    printf("\nCPU cycles spent: %llu\n\n", ipcbuffer[BENCHMARK_TCB_UTILISATION]);
     printf("\n=========== Benchmark ===========\n\n");
 #endif
     return sel4test_get_result();    
