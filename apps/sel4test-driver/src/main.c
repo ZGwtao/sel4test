@@ -466,10 +466,11 @@ void *main_continued(void *arg UNUSED)
 
     /* setup init data that won't change test-to-test */
     env.init->priority = seL4_MaxPrio - 1;
+/*
     if (plat_init) {
         plat_init(&env);
     }
-
+*/
     /* Allocate a reply object for the RT kernel. */
     if (config_set(CONFIG_KERNEL_MCS)) {
         error = vka_alloc_reply(&env.vka, &env.reply);
