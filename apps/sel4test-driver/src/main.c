@@ -58,7 +58,7 @@
 #define ALLOCATOR_VIRTUAL_POOL_SIZE ((1 << seL4_PageBits) * 100)
 
 /* static memory for the allocator to bootstrap with */
-#define ALLOCATOR_STATIC_POOL_SIZE ((1 << seL4_PageBits) * 20)
+#define ALLOCATOR_STATIC_POOL_SIZE ((1 << seL4_PageBits) * 40)
 static char allocator_mem_pool[ALLOCATOR_STATIC_POOL_SIZE];
 
 /* static memory for virtual memory bootstrapping */
@@ -70,6 +70,7 @@ struct driver_env env;
 static vka_object_t untypeds[CONFIG_MAX_NUM_BOOTINFO_UNTYPED_CAPS];
 /* list of sizes (in bits) corresponding to untyped */
 static uint8_t untyped_size_bits_list[CONFIG_MAX_NUM_BOOTINFO_UNTYPED_CAPS];
+static uint64_t untyped_paddr_list[CONFIG_MAX_NUM_BOOTINFO_UNTYPED_CAPS];
 
 extern char _cpio_archive[];
 extern char _cpio_archive_end[];
@@ -158,6 +159,7 @@ static unsigned int populate_untypeds(vka_object_t *untypeds)
     /* Fill out the size_bits list */
     for (unsigned int i = 0; i < num_untypeds; i++) {
         untyped_size_bits_list[i] = untypeds[i].size_bits;
+        untyped_paddr_list[i] = vka_utspace_paddr(&env.vka, untypeds[i].ut, seL4_UntypedObject, untypeds[i].size_bits);
     }
 
     /* Return reserve memory */
@@ -454,6 +456,7 @@ void *main_continued(void *arg UNUSED)
 
     /* copy the untyped size bits list across to the init frame */
     memcpy(env.init->untyped_size_bits_list, untyped_size_bits_list, sizeof(uint8_t) * env.num_untypeds);
+    memcpy(env.init->untyped_paddr_list, untyped_paddr_list, sizeof(uintptr_t) * env.num_untypeds);
 
     /* parse elf region data about the test image to pass to the tests app */
     num_elf_regions = sel4utils_elf_num_regions(&tests_elf);

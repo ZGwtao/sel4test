@@ -99,6 +99,7 @@ static void init_allocator(env_t env, test_init_data_t *init_data)
     seL4_CPtr slot;
     unsigned int size_bits_index;
     size_t size_bits;
+    size_t paddr;
     cspacepath_t path;
     for (slot = init_data->untypeds.start, size_bits_index = 0;
          slot <= init_data->untypeds.end;
@@ -108,6 +109,18 @@ static void init_allocator(env_t env, test_init_data_t *init_data)
         /* allocman doesn't require the paddr unless we need to ask for phys addresses,
          * which we don't. */
         size_bits = init_data->untyped_size_bits_list[size_bits_index];
+        paddr = init_data->untyped_paddr_list[size_bits_index];
+        if (config_set(CONFIG_LIB_ALLOCMAN_ALLOW_POOL_OPERATIONS)) {
+            // 4M ~ 1G size untypeds are normally be used as memory
+            if (size_bits > 22 && size_bits < 28) {
+                // If CapBuddy is enabled, then we try to perform some spliting operations here.
+                for (int j = 0; j < BIT(size_bits - 22); ++j) {
+                    error = allocman_utspace_try_create_virtual_bitmap_tree(allocator, &path, 22 - seL4_PageBits, paddr + j * (1024 * 4096));
+                    ZF_LOGF_IF(error, "Could not create virtual-bitmap-tree from untyped");
+                }
+                continue;
+            }
+        }
         error = allocman_utspace_add_uts(allocator, 1, &path, &size_bits, NULL,
                                          ALLOCMAN_UT_KERNEL);
         if (error) {
