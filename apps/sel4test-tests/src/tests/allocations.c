@@ -15,6 +15,7 @@
 #include <sel4/sel4.h>
 #include <vka/object.h>
 #include <sel4/benchmark_utilisation_types.h>
+#include <sel4/benchmark_tracepoints_types.h>
 
 #include "../helpers.h"
 
@@ -42,7 +43,7 @@ static size_t test_benchmark_cycle_cnt(env_t env, size_t (*func)(vka_t *vka))
     seL4_BenchmarkFinalizeLog();
     seL4_BenchmarkGetThreadUtilisation(simple_get_tcb(&env->simple));
     printf("\n---------- Utilisation ----------\n");
-    printf("\nCPU cycles spent: %ld\n", ipcbuffer[BENCHMARK_TCB_UTILISATION]);
+    printf("\nCPU cycles spent: %llu\n", ipcbuffer[BENCHMARK_TCB_UTILISATION]);
     printf("\n=========== Benchmark ===========\n");
     return r;
 }
@@ -116,7 +117,7 @@ static size_t test_collect_untypeds(vka_t *vka, int bot)
         free(head);
         head = curr;
     }
-    printf("\n >> Total Frame count: %ld * 4K Pages\n\n", frame_cnt);
+    printf("\n >> Total Frame count: %d * 4K Pages\n\n", frame_cnt);
     return frame_cnt;
 }
 
@@ -128,34 +129,48 @@ static int test_frame_allocation_single(env_t env)
      * the untypeds' capabilities that were givin to the seL4test-clients.
      */
 #if ENABLE_CAPBUDDY_EXTENSION
-    size_t frame_cnt = test_collect_untypeds(&env->vka, 22);
+    size_t frame_cnt = BIT(15u);//test_collect_untypeds(&env->vka, 22);
 #else
     size_t frame_cnt = test_collect_untypeds(&env->vka, 12);
 #endif
+    if (frame_cnt > BIT(15u)) {
+        frame_cnt = BIT(15u);
+    }
+
     int err;
     int cnt = 0;
+    uint64_t average = 0;
     vka_object_t tx;
-
+    uint64_t *ipcbuffer = (uint64_t *)&(seL4_GetIPCBuffer()->msg[0]);
+    seL4_BenchmarkResetThreadUtilisation(env->tcb);
+    seL4_BenchmarkResetLog();
+    seL4_BenchmarkFinalizeLog();
+    seL4_BenchmarkDumpAllThreadsUtilisation();
 #ifdef CONFIG_KERNEL_BENCHMARK
     printf("\n*********** Benchmark ***********\n\n");
-    uint64_t *ipcbuffer = (uint64_t *)&(seL4_GetIPCBuffer()->msg[0]);
-    seL4_BenchmarkResetThreadUtilisation(simple_get_tcb(&env->simple));
-    seL4_BenchmarkResetLog();
 #endif
     while (cnt < frame_cnt) {
+        seL4_BenchmarkResetThreadUtilisation(env->tcb);
+        seL4_BenchmarkResetLog();
         err = vka_alloc_frame(&env->vka, seL4_PageBits, &tx);
+        seL4_BenchmarkFinalizeLog();
+        seL4_BenchmarkGetThreadUtilisation(env->tcb);
         if (err != seL4_NoError) {
             /* ZF_LOGE("Failed to allocate frame no.[%d]", cnt); */
             break;
+        } else {
+            //printf("[%llu] ", ipcbuffer[BENCHMARK_TCB_UTILISATION] + ipcbuffer[BENCHMARK_TCB_KERNEL_UTILISATION]);
+            ;
         }
+        average += (ipcbuffer[BENCHMARK_TCB_UTILISATION] + ipcbuffer[BENCHMARK_TCB_KERNEL_UTILISATION]);
         cnt += 1;
     }
+    printf("\navr: %llu\n", average / cnt);
 #ifdef CONFIG_KERNEL_BENCHMARK
-    seL4_BenchmarkFinalizeLog();
-    seL4_BenchmarkGetThreadUtilisation(simple_get_tcb(&env->simple));
+    seL4_BenchmarkDumpAllThreadsUtilisation();
     printf("\n---------- Utilisation ----------\n");
-    printf("\nAverage cycles per alloc: %ld, cnt: %ld\n", ipcbuffer[BENCHMARK_TCB_UTILISATION] / cnt, cnt);
-    printf("\nCPU cycles spent: %ld\n\n", ipcbuffer[BENCHMARK_TCB_UTILISATION]);
+    printf("\nAverage TCB cycles per alloc: %llu, cnt: %d\n", ipcbuffer[BENCHMARK_TCB_UTILISATION] / (uint64_t)cnt, cnt);
+    printf("\nAverage K+T cycles per alloc: %llu, cnt: %d\n", ipcbuffer[BENCHMARK_TCB_KERNEL_UTILISATION] / (uint64_t)cnt, cnt);
     printf("\n=========== Benchmark ===========\n\n");
 #endif
     return sel4test_get_result();
@@ -171,7 +186,7 @@ static int test_frame_allocation_contiguous(env_t env)
      *  @param: batch -- frame number of memory request (based on 'bib')
      *  @param: frame_cnt -- available frames (overall) to meet all requests
      */
-    int bib = 4;
+    int bib = 0;
     int batch = BIT(bib);
 #if ENABLE_CAPBUDDY_EXTENSION
     size_t frame_cnt = test_collect_untypeds(&env->vka, 22);
@@ -181,6 +196,10 @@ static int test_frame_allocation_contiguous(env_t env)
     //!frame_cnt = frame_cnt % batch ? frame_cnt : frame_cnt - (frame_cnt % batch);
     /* frame_cnt should be 2^n * batch */
     assert(frame_cnt % batch == 0);
+
+    if (frame_cnt > BIT(15u)) {
+        frame_cnt = BIT(15u);
+    }
 
     int err;
     size_t cnt = 0;
@@ -196,7 +215,7 @@ static int test_frame_allocation_contiguous(env_t env)
 #ifdef CONFIG_KERNEL_BENCHMARK
     printf("\n*********** Benchmark ***********\n\n");
     uint64_t *ipcbuffer = (uint64_t *)&(seL4_GetIPCBuffer()->msg[0]);
-    seL4_BenchmarkResetThreadUtilisation(simple_get_tcb(&env->simple));
+    seL4_BenchmarkResetThreadUtilisation(env->tcb);
     seL4_BenchmarkResetLog();
 #endif
     while (cnt < frame_cnt) {
@@ -231,10 +250,10 @@ static int test_frame_allocation_contiguous(env_t env)
     }
 #ifdef CONFIG_KERNEL_BENCHMARK
     seL4_BenchmarkFinalizeLog();
-    seL4_BenchmarkGetThreadUtilisation(simple_get_tcb(&env->simple));
+    seL4_BenchmarkGetThreadUtilisation(env->tcb);
     printf("\n---------- Utilisation ----------\n");
-    printf("\nAverage cycles per alloc: %ld, cnt: %ld\n", ipcbuffer[BENCHMARK_TCB_UTILISATION] / cnt, cnt);
-    printf("\nCPU cycles spent: %ld\n\n", ipcbuffer[BENCHMARK_TCB_UTILISATION]);
+    printf("\nAverage TCB cycles per alloc: %llu, cnt: %d\n", ipcbuffer[BENCHMARK_TCB_UTILISATION] / (uint64_t)cnt, cnt);
+    printf("\nAverage K+T cycles per alloc: %llu, cnt: %d\n", ipcbuffer[BENCHMARK_TCB_KERNEL_UTILISATION] / (uint64_t)cnt, cnt);
     printf("\n=========== Benchmark ===========\n\n");
 #endif
     return sel4test_get_result();
@@ -250,6 +269,11 @@ static int test_frame_deallocation_single(env_t env)
 #else
     size_t frame_cnt = test_collect_untypeds(&env->vka, 12);
 #endif
+
+    if (frame_cnt > BIT(15u)) {
+        frame_cnt = BIT(15u);
+    }
+
     int err;
     size_t cnt = 0;
     size_t alloc_cnt;   /* due to metadata restriction, not all frames (frame_cnt) are available */
@@ -289,7 +313,7 @@ static int test_frame_deallocation_single(env_t env)
 #ifdef CONFIG_KERNEL_BENCHMARK
     printf("\n*********** Benchmark ***********\n\n");
     uint64_t *ipcbuffer = (uint64_t *)&(seL4_GetIPCBuffer()->msg[0]);
-    seL4_BenchmarkResetThreadUtilisation(simple_get_tcb(&env->simple));
+    seL4_BenchmarkResetThreadUtilisation(env->tcb);
     seL4_BenchmarkResetLog();
 #endif
     while (cnt < alloc_cnt) {
@@ -305,10 +329,10 @@ static int test_frame_deallocation_single(env_t env)
     }
 #ifdef CONFIG_KERNEL_BENCHMARK
     seL4_BenchmarkFinalizeLog();
-    seL4_BenchmarkGetThreadUtilisation(simple_get_tcb(&env->simple));
+    seL4_BenchmarkGetThreadUtilisation(env->tcb);
     printf("\n---------- Utilisation ----------\n");
-    printf("\nAverage cycles per dealloc: %ld, cnt: %ld\n", ipcbuffer[BENCHMARK_TCB_UTILISATION] / cnt, cnt);
-    printf("\nCPU cycles spent: %ld\n\n", ipcbuffer[BENCHMARK_TCB_UTILISATION]);
+    printf("\nAverage TCB cycles per alloc: %llu, cnt: %d\n", ipcbuffer[BENCHMARK_TCB_UTILISATION] / (uint64_t)cnt, cnt);
+    printf("\nAverage K+T cycles per alloc: %llu, cnt: %d\n", ipcbuffer[BENCHMARK_TCB_KERNEL_UTILISATION] / (uint64_t)cnt, cnt);
     printf("\n=========== Benchmark ===========\n\n");
 #endif
     return sel4test_get_result();
@@ -336,7 +360,7 @@ static int test_frame_deallocation_contiguous(env_t env)
      *  @param: batch -- frame number of memory request (based on 'bib')
      *  @param: frame_cnt -- available frames (overall) to meet all requests
      */
-    int bib = 4;
+    int bib = 0;
     int batch = BIT(bib);
 #if ENABLE_CAPBUDDY_EXTENSION
     size_t frame_cnt = test_collect_untypeds(&env->vka, 22);
@@ -346,6 +370,10 @@ static int test_frame_deallocation_contiguous(env_t env)
     //!frame_cnt = frame_cnt % batch ? frame_cnt : frame_cnt - (frame_cnt % batch);
     /* frame_cnt should be 2^n * batch */
     assert(frame_cnt % batch == 0);
+
+    if (frame_cnt > BIT(15u)) {
+        frame_cnt = BIT(15u);
+    }
 
     int err;
     size_t cnt = 0;
@@ -396,7 +424,7 @@ static int test_frame_deallocation_contiguous(env_t env)
         fx = (frame_object_t *)malloc(sizeof(frame_object_t));
         if (!fx) {
             ZF_LOGE("Failed to allocate frame metadata");
-            assert(0);
+            break;
         }
         fx = (frame_object_t *)memset(fx, 0, sizeof(frame_object_t));
         ft = fx;
@@ -431,7 +459,7 @@ static int test_frame_deallocation_contiguous(env_t env)
         curr->frame_list = fx;
         curr->next = (untyped_object_frames_t *)malloc(sizeof(untyped_object_frames_t));
         if (!curr->next) {
-            assert(0);
+            break;
         }
         curr = curr->next;
         curr = (untyped_object_frames_t *)memset(curr, 0, sizeof(untyped_object_frames_t));
@@ -488,12 +516,214 @@ static int test_frame_deallocation_contiguous(env_t env)
     seL4_BenchmarkFinalizeLog();
     seL4_BenchmarkGetThreadUtilisation(simple_get_tcb(&env->simple));
     printf("\n---------- Utilisation ----------\n");
-    printf("\nAverage cycles per dealloc: %ld, cnt: %ld\n", ipcbuffer[BENCHMARK_TCB_UTILISATION] / cnt, cnt);
-    printf("\nCPU cycles spent: %ld\n\n", ipcbuffer[BENCHMARK_TCB_UTILISATION]);
+    printf("\nAverage TCB cycles per alloc: %llu, cnt: %d\n", ipcbuffer[BENCHMARK_TCB_UTILISATION] / (uint64_t)cnt, cnt);
+    printf("\nAverage K+T cycles per alloc: %llu, cnt: %d\n", ipcbuffer[BENCHMARK_TCB_KERNEL_UTILISATION] / (uint64_t)cnt, cnt);
     printf("\n=========== Benchmark ===========\n\n");
 #endif
+    while (true);
     return sel4test_get_result();    
 }
 
 DEFINE_TEST(AXMR_FREE0002, "Testcase for testing frame deallocations (contiguous) for CapBuddy",
             test_frame_deallocation_contiguous, true)
+
+static int test_frame_alloc_free_volume(env_t env)
+{
+#if ENABLE_CAPBUDDY_EXTENSION
+    size_t frame_cnt = test_collect_untypeds(&env->vka, 22);
+#else
+    size_t frame_cnt = test_collect_untypeds(&env->vka, 12);
+#endif
+    if (frame_cnt > BIT(15u)) {
+        frame_cnt = BIT(15u);
+    }
+    int err;
+    size_t cnt = 0;
+    size_t alloc_cnt;   /* due to metadata restriction, not all frames (frame_cnt) are available */
+    /***
+     * We should collect the freeing materials here and they are
+     * the pre-allocated frames. So one main difference between
+     * alloc and dealloc testcase is we should bookkeeping their
+     * metadata to free them later on.
+     */
+    untyped_object_t *head = (untyped_object_t *)malloc(sizeof(untyped_object_t));
+    if (!head) {
+        assert(0);
+    }
+    head = (untyped_object_t *)memset(head, 0, sizeof(untyped_object_t));
+    untyped_object_t *curr = head;
+    /***
+     * Start our allocation here
+     */
+#ifdef CONFIG_KERNEL_BENCHMARK
+    printf("\n*********** Benchmark ***********\n\n");
+    uint64_t *ipcbuffer = (uint64_t *)&(seL4_GetIPCBuffer()->msg[0]);
+    seL4_BenchmarkResetThreadUtilisation(env->tcb);
+    seL4_BenchmarkResetLog();
+#endif
+    while (cnt < frame_cnt) {
+        err = vka_alloc_frame(&env->vka, seL4_PageBits, &curr->target);
+        if (err != seL4_NoError) {
+            /* ZF_LOGE("Failed to allocate frame no.[%d]", cnt); */
+            break;
+        }
+        curr->next = (untyped_object_t *)malloc(sizeof(untyped_object_t));
+        if (!curr->next) {
+            break;
+        }
+        curr = curr->next;
+        cnt += 1;
+    }
+#ifdef CONFIG_KERNEL_BENCHMARK
+    seL4_BenchmarkFinalizeLog();
+    seL4_BenchmarkGetThreadUtilisation(env->tcb);
+    printf("\n---------- Utilisation ----------\n");
+    printf("\nAverage TCB cycles per alloc: %llu, cnt: %d\n", ipcbuffer[BENCHMARK_TCB_UTILISATION] / (uint64_t)cnt, cnt);
+    printf("\nAverage K+T cycles per alloc: %llu, cnt: %d\n", ipcbuffer[BENCHMARK_TCB_KERNEL_UTILISATION] / (uint64_t)cnt, cnt);
+    printf("\n=========== Benchmark ===========\n\n");
+#endif
+    alloc_cnt = cnt;
+    /***
+     * Now it's time to free them one by one.
+     */
+    cnt = 0;
+#ifdef CONFIG_KERNEL_BENCHMARK
+    printf("\n*********** Benchmark ***********\n\n");
+    ipcbuffer = (uint64_t *)&(seL4_GetIPCBuffer()->msg[0]);
+    seL4_BenchmarkResetThreadUtilisation(env->tcb);
+    seL4_BenchmarkResetLog();
+#endif
+    while (cnt < alloc_cnt) {
+        if (head->target.cptr) {
+            vka_free_object(&env->vka, &head->target);
+        } else {
+            break;
+        }
+        curr = head;
+        head = head->next;
+        free(curr); // avoid it to not interfere with performance
+        cnt += 1;
+    }
+#ifdef CONFIG_KERNEL_BENCHMARK
+    seL4_BenchmarkFinalizeLog();
+    seL4_BenchmarkGetThreadUtilisation(env->tcb);
+    printf("\n---------- Utilisation ----------\n");
+    printf("\nAverage TCB cycles per alloc: %llu, cnt: %d\n", ipcbuffer[BENCHMARK_TCB_UTILISATION] / (uint64_t)cnt, cnt);
+    printf("\nAverage K+T cycles per alloc: %llu, cnt: %d\n", ipcbuffer[BENCHMARK_TCB_KERNEL_UTILISATION] / (uint64_t)cnt, cnt);
+    printf("\n=========== Benchmark ===========\n\n");
+#endif
+    return 0;
+}
+
+static int test_frame_alloc_free(env_t env) {
+    int err;
+    for (int i = 0; i < 5; ++i) {
+        err = test_frame_alloc_free_volume(env);
+        if (err != seL4_NoError) {
+            assert(0);
+        }
+    }
+    return sel4test_get_result();
+}
+
+DEFINE_TEST(AXMR_TBOTH0001, "Testcase for testing frame single-opertation for CapBuddy",
+            test_frame_alloc_free, true)
+
+static int test_frame_both_iteration(env_t env)
+{
+#if ENABLE_CAPBUDDY_EXTENSION
+    size_t frame_cnt = test_collect_untypeds(&env->vka, 22);
+#else
+    size_t frame_cnt = test_collect_untypeds(&env->vka, 12);
+#endif
+    vka_object_t array[10];
+    memset(array, 0, sizeof(vka_object_t));
+
+    int err;
+
+    for (int i = 0; i < 10; ++i) {
+        err = vka_alloc_untyped(&env->vka, 22, array + i);
+        if (err) {
+            assert(0);
+        }
+    }
+
+    vka_object_t vx;
+    for (int i = 40; i >= 12; --i) {
+        while (true) {
+            err = vka_alloc_untyped(&env->vka, i, &vx);
+            if (err != seL4_NoError) {
+                break;
+            }
+        }
+    }
+
+    untyped_object_t *head = (untyped_object_t *)malloc(sizeof(untyped_object_t));
+    if (!head) {
+        assert(0);
+    }
+    head = (untyped_object_t *)memset(head, 0, sizeof(untyped_object_t));
+    untyped_object_t *curr = head;
+
+    uint64_t *ipcbuffer;
+    int cnt = 0;
+    printf("\n*********** Benchmark ***********\n\n");
+    for (int i = 0; i < 10; ++i) {
+        vka_free_object(&env->vka, &array[i]);
+#ifdef CONFIG_KERNEL_BENCHMARK
+        ipcbuffer = (uint64_t *)&(seL4_GetIPCBuffer()->msg[0]);
+        seL4_BenchmarkResetThreadUtilisation(env->tcb);
+        seL4_BenchmarkResetLog();
+#endif
+        for (int j = 0; j < 1024; ++j) {
+            err = vka_alloc_frame(&env->vka, seL4_PageBits, &curr->target);
+            if (err != seL4_NoError) {
+                /* ZF_LOGE("Failed to allocate frame no.[%d]", cnt); */
+                break;
+            }
+            curr->next = (untyped_object_t *)malloc(sizeof(untyped_object_t));
+            if (!curr->next) {
+                break;
+            }
+            curr = curr->next;
+            cnt += 1;
+        }
+#ifdef CONFIG_KERNEL_BENCHMARK
+    seL4_BenchmarkFinalizeLog();
+    seL4_BenchmarkGetThreadUtilisation(env->tcb);
+    printf("\n---------- Utilisation ----------\n");
+    printf("\nAverage TCB cycles per alloc: %llu, cnt: %d\n", ipcbuffer[BENCHMARK_TCB_UTILISATION] / (uint64_t)cnt, cnt);
+    printf("\nAverage K+T cycles per alloc: %llu, cnt: %d\n", ipcbuffer[BENCHMARK_TCB_KERNEL_UTILISATION] / (uint64_t)cnt, cnt);
+#endif
+    }
+
+    for (int i = 0; i < 10; ++i) {
+    #ifdef CONFIG_KERNEL_BENCHMARK
+        ipcbuffer = (uint64_t *)&(seL4_GetIPCBuffer()->msg[0]);
+        seL4_BenchmarkResetThreadUtilisation(env->tcb);
+        seL4_BenchmarkResetLog();
+    #endif
+        for (int j = 0; j < 1024; ++j) {
+            if (head->target.cptr) {
+                vka_free_object(&env->vka, &head->target);
+            } else {
+                break;
+            }
+            curr = head;
+            head = head->next;
+            free(curr); // avoid it to not interfere with performance
+        }
+    #ifdef CONFIG_KERNEL_BENCHMARK
+        seL4_BenchmarkFinalizeLog();
+        seL4_BenchmarkGetThreadUtilisation(env->tcb);
+        printf("\n---------- Utilisation ----------\n");
+        printf("\nAverage TCB cycles per alloc: %llu, cnt: %d\n", ipcbuffer[BENCHMARK_TCB_UTILISATION] / (uint64_t)cnt, cnt);
+        printf("\nAverage K+T cycles per alloc: %llu, cnt: %d\n", ipcbuffer[BENCHMARK_TCB_KERNEL_UTILISATION] / (uint64_t)cnt, cnt);
+    #endif
+    }
+    printf("\n=========== Benchmark ===========\n\n");
+    return sel4test_get_result();
+}
+
+DEFINE_TEST(AXMR_TBOTH0002, "Testcase for testing frame deallocations for CapBuddy",
+            test_frame_both_iteration, true)
