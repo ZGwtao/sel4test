@@ -186,7 +186,7 @@ static int test_frame_allocation_contiguous(env_t env)
      *  @param: batch -- frame number of memory request (based on 'bib')
      *  @param: frame_cnt -- available frames (overall) to meet all requests
      */
-    int bib = 0;
+    int bib = 10;
     int batch = BIT(bib);
 #if ENABLE_CAPBUDDY_EXTENSION
     size_t frame_cnt = test_collect_untypeds(&env->vka, 22);
@@ -360,7 +360,7 @@ static int test_frame_deallocation_contiguous(env_t env)
      *  @param: batch -- frame number of memory request (based on 'bib')
      *  @param: frame_cnt -- available frames (overall) to meet all requests
      */
-    int bib = 0;
+    int bib = 10;
     int batch = BIT(bib);
 #if ENABLE_CAPBUDDY_EXTENSION
     size_t frame_cnt = test_collect_untypeds(&env->vka, 22);
