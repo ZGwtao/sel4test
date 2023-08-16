@@ -5,6 +5,7 @@
  */
 
 #include <autoconf.h>
+#include <sel4test-driver/gen_config.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,7 +45,7 @@ static sel4utils_alloc_data_t alloc_data;
 #define ALLOCATOR_VIRTUAL_POOL_SIZE ((1 << seL4_PageBits) * 4000)
 
 /* allocator static pool */
-#define ALLOCATOR_STATIC_POOL_SIZE ((1 << seL4_PageBits) * 20)
+#define ALLOCATOR_STATIC_POOL_SIZE ((1 << seL4_PageBits) * 200)
 static char allocator_mem_pool[ALLOCATOR_STATIC_POOL_SIZE];
 
 /* override abort, called by exit (and assert fail) */
@@ -82,6 +83,9 @@ static testcase_t *find_test(const char *name)
 
 static void init_allocator(env_t env, test_init_data_t *init_data)
 {
+#undef SEL4TEST_CAPBUDDY_RANGE
+#define SEL4TEST_CAPBUDDY_RANGE(SZ) ((SZ > 22) && (SZ < 28))
+
     UNUSED int error;
     UNUSED reservation_t virtual_reservation;
 
@@ -110,17 +114,76 @@ static void init_allocator(env_t env, test_init_data_t *init_data)
          * which we don't. */
         size_bits = init_data->untyped_size_bits_list[size_bits_index];
         paddr = init_data->untyped_paddr_list[size_bits_index];
+    
 #ifdef CONFIG_LIB_ALLOCMAN_ALLOW_POOL_OPERATIONS
-        // 4M ~ 1G size untypeds are normally be used as memory
-        if (size_bits > 22 && size_bits < 28) {
-            // If CapBuddy is enabled, then we try to perform some spliting operations here.
-            for (int j = 0; j < BIT(size_bits - 22); ++j) {
-                error = allocman_utspace_try_create_virtual_bitmap_tree(allocator, &path, 22 - seL4_PageBits, paddr + j * (1024 * 4096));
+#if (CONFIG_CAPBUDDY_PRE_ALLOC_VBT == 1) /* pre-allocate blocks */
+
+        if (SEL4TEST_CAPBUDDY_RANGE(size_bits)) {
+
+            size_t block_size_bits = 22;
+            size_t block_size = BIT(block_size_bits);
+            size_t block_num = BIT(size_bits - block_size_bits);
+            size_t block_paddr = paddr;
+
+            while (block_paddr < paddr + block_num * block_size) {
+                seL4_CPtr block_cptr;
+                error = vka_cspace_alloc(&env->vka, &block_cptr);
+                if (error != seL4_NoError) {
+                    ZF_LOGF("Failed to allocate cslot for pre-allocated 4M blocks");
+                }
+                cspacepath_t block_cslot;
+                vka_cspace_make_path(&env->vka, block_cptr, &block_cslot);
+
+                error = seL4_Untyped_Retype(
+                            path.capPtr,
+                            seL4_UntypedObject,
+                            block_size_bits,
+                            block_cslot.root,
+                            block_cslot.dest,
+                            block_cslot.destDepth,
+                            block_cslot.offset,
+                            1
+                        );
+                if (error != seL4_NoError) {
+                    ZF_LOGF("Failed to invoke Untyped_Retype to create 4M block");
+                    /* run out of memory? */
+                    assert(0);
+                }
+                error = allocman_utspace_add_uts(allocator, 1, &block_cslot, &block_size_bits, &block_paddr, ALLOCMAN_UT_KERNEL);
+                if (error != seL4_NoError) {
+                    ZF_LOGF("Failed to add the newly-created 4M untyped into the allocator");
+                }
+
+                block_paddr += block_size;
+            }
+
+            continue;
+        }
+
+#elif (CONFIG_CAPBUDDY_PRE_ALLOC_VBT == 2) /* pre-allocate virtual-bitmap-trees */
+
+        if (SEL4TEST_CAPBUDDY_RANGE(size_bits)) {
+
+            size_t block_size_bits = 22;
+            size_t block_size = BIT(block_size_bits);
+            size_t block_num = BIT(size_bits - 22);
+            size_t block_paddr = paddr;
+
+            while (block_paddr < paddr + block_num * block_size) {
+                /* Create virtual-bitmap-trees one by one */
+                error =
+                    allocman_utspace_try_create_virtual_bitmap_tree(allocator, &path, block_size_bits - seL4_PageBits, block_paddr);
+
                 ZF_LOGF_IF(error, "Could not create virtual-bitmap-tree from untyped");
+
+                block_paddr += block_size;
             }
             continue;
         }
-#endif
+
+#endif /* CONFIG_CAPBUDDY_PRE_ALLOC_VBT */
+#endif /* CONFIG_LIB_ALLOCMAN_ALLOW_POOL_OPERATIONS */
+
         error = allocman_utspace_add_uts(allocator, 1, &path, &size_bits, NULL,
                                          ALLOCMAN_UT_KERNEL);
         if (error) {
@@ -153,7 +216,7 @@ static void init_allocator(env_t env, test_init_data_t *init_data)
 
     bootstrap_configure_virtual_pool(allocator, vaddr, ALLOCATOR_VIRTUAL_POOL_SIZE,
                                      env->page_directory);
-
+#undef SEL4TEST_CAPBUDDY_RANGE
 }
 
 static uint8_t cnode_size_bits(void *data)

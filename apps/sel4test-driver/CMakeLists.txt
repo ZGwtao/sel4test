@@ -21,6 +21,19 @@ config_option(
     DEFAULT
     ON
 )
+
+config_string(
+    Sel4testCapBuddyPreAllocVBT
+    CAPBUDDY_PRE_ALLOC_VBT
+    "Pre-allocate virtual-bitmap-trees instead of cutting all
+    large untypeds into 4M pieces so as to speed up allocating
+    and deallocating frames from CapBuddy"
+    DEFAULT
+    0
+    UNQUOTE
+)
+mark_as_advanced(Sel4testCapBuddyPreAllocVBT)
+
 if(Sel4testAllowSettingsOverride)
     mark_as_advanced(CLEAR Sel4testHaveTimer Sel4testHaveCache)
 else()
