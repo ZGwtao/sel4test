@@ -56,6 +56,54 @@ ipc_client_max_fn(seL4_Word *argv, void *unused0, void *unused1)
     }
 }
 
+void fault_handler_fn(seL4_Word *argv, void *unused0, void *unused1)
+{
+    seL4_CPtr fault_ep = argv[0];
+    seL4_CPtr ro = argv[1];
+    seL4_CPtr untagged_ep = argv[2];
+    volatile seL4_Word *calls_complete = (seL4_Word *)argv[3];
+
+    //printf("Ready to handle fault for active receiver.\n");
+
+    seL4_Recv(fault_ep, NULL, ro);
+
+    //printf("Caught fault!\n");
+
+    int err = seL4_SchedContext_Unbind(ro);
+    if (err != seL4_NoError) {
+        ZF_LOGF("Failed with sched_context unbind.\n");
+    }
+
+    //printf("Finished with Unbinding.\n");
+
+    seL4_NBSend(ro, seL4_MessageInfo_new(0, 0, 0, 0));
+
+    //printf("Finished sending nonblockingly.\n");
+
+    while (1) {
+        seL4_Call(untagged_ep, seL4_MessageInfo_new(0, 0, 0, 0));
+        (*calls_complete)++;
+        //printf("%lu\n", *calls_complete);
+    }
+}
+
+void active_receiver_fn(seL4_Word *argv, void *unused0, void *unused1)
+{
+    seL4_CPtr untagged_ep = argv[0];
+    seL4_CPtr ro = argv[1];
+
+    //printf("Ready to receive on an untagged endpoint as active thread.\n");
+
+    seL4_Recv(untagged_ep, NULL, ro);
+
+    //printf("[AR]\n");
+
+    while (1) {
+        seL4_ReplyRecv(untagged_ep, seL4_MessageInfo_new(0, 0, 0, 0), NULL, ro);
+        //printf("[AR]\n");
+    }
+}
+
 void
 ipc_server_fn(seL4_Word *argv, void *unused0, void *unused1)
 {
@@ -224,6 +272,28 @@ configure_thread(env_t *env, sel4utils_thread_t *thread, uint8_t prio)
     assert(!err);
 }
 
+#ifdef CONFIG_CORE_TAGGED_OBJECT
+void
+configure_thread_with_fault(env_t *env, sel4utils_thread_t *thread, uint8_t prio, seL4_CPtr *fault_ep)
+{
+    int err;
+
+    cspacepath_t cspace_cspath;
+    vka_cspace_make_path(env->vka, 0, &cspace_cspath);
+    vka_object_t fault_ep_obj;
+
+    err = vka_alloc_endpoint_with_core(env->vka, 1, &fault_ep_obj);
+    if (err != seL4_NoError) {
+        ZF_LOGF("Failed to allocate endpoint for fault_handling.\n");
+    }
+    *fault_ep = fault_ep_obj.cptr;
+
+    sel4utils_thread_config_t config = thread_config_default(env->simple, cspace_cspath.root, seL4_NilData, fault_ep_obj.cptr, prio);
+    err = sel4utils_configure_thread_config(env->vka, env->vspace, env->vspace, config, thread);
+    assert(!err);
+}
+#endif
+
 void set_affinity(env_t *env, sel4utils_thread_t *thread, seL4_Word affinity) {
     seL4_Time timeslice = CONFIG_BOOT_THREAD_TIME_SLICE * US_IN_MS;
     seL4_CPtr sched_control = simple_get_sched_ctrl(env->simple, affinity);
@@ -355,9 +425,10 @@ interrupt_thread_throughput(env_t *env, void *counters_p)
             printf("%lu\t", diff);
             total += diff;
         }
-        printf("%lu\n", total);
+        printf("%lu  c0: %lu c1: %lu ca: %lf\n", total, cycles0, cycles1, average_cycles);
         total_all_runs += total;
         average_cycles += ((double)(cycles1 - cycles0) / ((double)total / CONFIG_NUM_CORES)) / ITERATIONS;
+        //average_cycles += ((double)(cycles1 - cycles0) / (double)total) / ITERATIONS;
     }
     fglprintf("### Average across all runs: %lu\n", total_all_runs / ITERATIONS);
     fglprintf("### Average cycle cost: %lu\n", (uint64_t)average_cycles);
@@ -533,8 +604,80 @@ struct nbsendwait_core_state {
     PAD_TO_NEXT_CACHE_LN(sizeof (sel4utils_thread_t) + 3 * sizeof (seL4_Word));
 };
 
+#ifdef CONFIG_CORE_TAGGED_OBJECT
+void proto_active_receiver(env_t *env)
+{
+    sel4utils_thread_t fault_handler_thread, active_recv_thread;
+#if 1
+    seL4_Word *counters[CONFIG_NUM_CORES] = {0};
+    seL4_Word counter;
+    counters[0] = &counter;
+    run_interrupt_thread(env, false, counters);
+#endif
+    seL4_Word handler_params[4];
+    /* fault handler endpoint */
+    //handler_params[0] = vka_alloc_endpoint_with_core_leaky(env->vka, 1);
+    handler_params[1] = vka_alloc_reply_with_core_leaky(env->vka, 1);
+    handler_params[3] = (seL4_Word)&counter;
+    //handler_params[0] = vka_alloc_endpoint_leaky(env->vka);
+    //handler_params[1] = vka_alloc_reply_leaky(env->vka);
+
+    configure_thread(env, &fault_handler_thread, WORKER_PRIORITY);
+    set_affinity(env, &fault_handler_thread, 0);
+
+    /* active receiver should fault */
+    configure_thread_with_fault(env, &active_recv_thread, WORKER_PRIORITY, &handler_params[0]);
+    set_affinity(env, &active_recv_thread, 0);
+
+    seL4_Word faulter_params[2];
+    /* normal untagged endpoint for active receiver */
+    faulter_params[0] = vka_alloc_endpoint_leaky(env->vka);
+    faulter_params[1] = vka_alloc_reply_leaky(env->vka);
+
+    handler_params[2] = faulter_params[0];
+
+    sel4utils_start_thread(&active_recv_thread, (sel4utils_thread_entry_fn)active_receiver_fn, (void *)faulter_params, NULL, 1);
+    sel4utils_start_thread(&fault_handler_thread, (sel4utils_thread_entry_fn)fault_handler_fn, (void *)handler_params, NULL, 1);
+}
+#endif
+
 void
 start_ipc_pingpong_pair(env_t *env, seL4_Word core, struct ipc_pingpong_core_state *state, bool max)
+{
+    configure_thread(env, &state->ping_thread, WORKER_PRIORITY);
+    configure_thread(env, &state->pong_thread, WORKER_PRIORITY);
+
+#ifdef CONFIG_CORE_TAGGED_OBJECT
+    state->pong_params[0] = vka_alloc_endpoint_with_core_leaky(env->vka, core + 1);
+    state->pong_params[1] = vka_alloc_endpoint_with_core_leaky(env->vka, core + 1);
+    state->pong_params[2] = vka_alloc_reply_with_core_leaky(env->vka, core + 1);
+#else
+    state->pong_params[0] = vka_alloc_endpoint_leaky(env->vka);
+    state->pong_params[1] = vka_alloc_endpoint_leaky(env->vka);
+    state->pong_params[2] = vka_alloc_reply_leaky(env->vka);
+#endif
+
+    set_affinity(env, &state->pong_thread, core);
+
+    sel4utils_start_thread(&state->pong_thread, (sel4utils_thread_entry_fn)ipc_server_fn, (void *)state->pong_params, NULL, 1);
+
+    seL4_Wait(state->pong_params[1], NULL);
+    seL4_SchedContext_Unbind(state->pong_thread.sched_context.cptr);
+
+    state->ping_params[0] = state->pong_params[0];
+    state->ping_params[1] = (seL4_Word)&state->counter;
+    set_affinity(env, &state->ping_thread, core);
+    sel4utils_start_thread(
+        &state->ping_thread,
+        (sel4utils_thread_entry_fn)(max ? ipc_client_max_fn : ipc_client_throughput_fn),
+        (void *)state->ping_params,
+        NULL,
+        1
+    );
+}
+
+void
+start_ipc_pingpong_pair_cc(env_t *env, struct ipc_pingpong_core_state *state, bool max)
 {
     configure_thread(env, &state->ping_thread, WORKER_PRIORITY);
     configure_thread(env, &state->pong_thread, WORKER_PRIORITY);
@@ -542,13 +685,19 @@ start_ipc_pingpong_pair(env_t *env, seL4_Word core, struct ipc_pingpong_core_sta
     state->pong_params[0] = vka_alloc_endpoint_leaky(env->vka);
     state->pong_params[1] = vka_alloc_endpoint_leaky(env->vka);
     state->pong_params[2] = vka_alloc_reply_leaky(env->vka);
+
+    set_affinity(env, &state->pong_thread, 0);
+
     sel4utils_start_thread(&state->pong_thread, (sel4utils_thread_entry_fn)ipc_server_fn, (void *)state->pong_params, NULL, 1);
+
     seL4_Wait(state->pong_params[1], NULL);
     seL4_SchedContext_Unbind(state->pong_thread.sched_context.cptr);
 
     state->ping_params[0] = state->pong_params[0];
     state->ping_params[1] = (seL4_Word)&state->counter;
-    set_affinity(env, &state->ping_thread, core);
+
+    set_affinity(env, &state->ping_thread, 0);
+
     sel4utils_start_thread(
         &state->ping_thread,
         (sel4utils_thread_entry_fn)(max ? ipc_client_max_fn : ipc_client_throughput_fn),
@@ -699,10 +848,15 @@ start_send_and_recv_threads(env_t *env, seL4_Word core, struct send_and_recv_cor
     seL4_Word *send_params = state->send_params;
     seL4_Word *recv_params = state->recv_params;
     seL4_Word *calls_complete = &state->counter;
-
+#if 0
+    seL4_CPtr ep = vka_alloc_endpoint_with_core_leaky(env->vka, core + 1);
+    seL4_CPtr ro0 = vka_alloc_reply_with_core_leaky(env->vka, core + 1);
+    seL4_CPtr ro1 = vka_alloc_reply_with_core_leaky(env->vka, core + 1);
+#else
     seL4_CPtr ep = vka_alloc_endpoint_leaky(env->vka);
     seL4_CPtr ro0 = vka_alloc_reply_leaky(env->vka);
     seL4_CPtr ro1 = vka_alloc_reply_leaky(env->vka);
+#endif
 
     send_params[0] = ep;
     send_params[1] = ro0;
@@ -801,6 +955,20 @@ start_nbsendwait_threads(env_t *env, seL4_Word core, struct nbsendwait_core_stat
     set_affinity(env, recv_thread, core);
     sel4utils_start_thread(send_thread, (sel4utils_thread_entry_fn)nbsendwait_fn, (void *)send_params, NULL, 1);
     sel4utils_start_thread(recv_thread, (sel4utils_thread_entry_fn)nbsendwait_fn, (void *)recv_params, NULL, 1);
+}
+
+void bm_ipc_cc_tp(env_t *env)
+{
+    struct ipc_pingpong_core_state core_state[CONFIG_NUM_CORES] = {0};
+    seL4_Word *counters[CONFIG_NUM_CORES] = {0};
+
+    for (int core = 0; core < CONFIG_NUM_CORES; core++) {
+        counters[core] = &core_state[core].counter;
+    }
+
+    run_interrupt_thread(env, false, counters);
+
+    start_ipc_pingpong_pair_cc(env, &core_state[0], false);
 }
 
 void

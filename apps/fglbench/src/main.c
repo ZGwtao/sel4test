@@ -69,7 +69,11 @@ main_continued(void *arg)
 {
     typedef void (*benchmark_t)(env_t *);
     benchmark_t benchmarks[] = {
+#ifdef CONFIG_CORE_TAGGED_OBJECT
+        proto_active_receiver,
+#endif
         bm_ipc_tp,
+        bm_ipc_cc_tp,
         bm_ipc_tp_nc,
         bm_ipc_tp_1c,
         bm_ipc_max_nc,

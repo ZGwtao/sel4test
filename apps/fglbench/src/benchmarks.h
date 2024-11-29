@@ -9,12 +9,14 @@
 
 /* Ping pong defines */
 #define WARMUPS 1
-#define ITERATIONS 1
+#define ITERATIONS 5
 #define MAX_ET_RUNTIME_MINS 20
 #define INTERRUPT_PRIORITY 200
 #define WORKER_PRIORITY 100
 
+void proto_active_receiver(env_t *env);
 void bm_ipc_tp(env_t *env);
+void bm_ipc_cc_tp(env_t *env);
 void bm_ipc_tp_nc(env_t *env);
 void bm_ipc_tp_1c(env_t *env);
 void bm_ipc_max_nc(env_t *env);
